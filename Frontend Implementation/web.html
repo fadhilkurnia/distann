@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+    <script type = "text/javascript" src = "script.js"></script>
 <head lang = "en">
     <title>Distann</title>
     <link rel = "StyleSheet" href= "format.css">
@@ -11,8 +12,17 @@
 </h1>
 <div class = "prompt">
     Prompt
-    <input class = "input_txt" placeholder = "Enter a message">
+    <input class = "input_txt" id = "input" placeholder = "Enter a message">
 </div>
-<button class = "send_btn" onclick = "send()">Send</button>
+<button class = "send_btn" onclick = "send()"> Send </button>
+
+<div class = "output">
+    Output
+    <br>
+    <br>
+    <div class = "images">
+        <img src = "http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg" alt = "No image">
+    </div>
+</div>
 </body>
 </html>
