@@ -7,6 +7,7 @@ void TestCtrl::asyncHandleHttpRequest(
   // write your application logic here
 
   // get the path of our image
+  // NOTE: Will need to update path to match your local path
   std::string imagePath = "/Users/samiahmed/Downloads/val2017/000000388258.jpg";
 
   // read our image from our path and store it in image
