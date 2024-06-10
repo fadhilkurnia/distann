@@ -1,0 +1,61 @@
+h1
+{
+    text-align: center;
+    font-size: 75px;
+    border-radius: 1;
+    margin: 0;
+}
+.prompt
+{
+    text-align: center;
+    margin: auto;
+    display: block;
+    width: 30%;
+    font-size: 20px;
+    border-radius: 10px;
+    background-color: #f2f2f2;    
+    padding: 12px;
+}
+.output
+{
+    display: block;
+    width: 90%;
+    font-size: 20px;
+    border-radius: 10px;
+    background-color: #f2f2f2;    
+    padding: 12px;
+}
+
+    .images img
+    {
+        width: 18%;
+        height: 100%;
+        margin: 10px;
+    }
+.input_txt 
+{
+    margin: auto;
+    display: block;
+    width: 70%;
+    border-radius: 10px;
+    padding: 12px 20px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+}
+.send_btn
+{
+    border: 0; border-radius: 10px;
+    text-align: center;
+    padding: 10px 10px;
+    font-size: 16px;
+    cursor: pointer;
+    position: relative;
+    margin: auto;
+    display: block;
+  }
+
+.send_btn:hover
+{
+    background-color: #4CAF50;
+    color: white;
+}
