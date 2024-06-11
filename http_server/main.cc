@@ -6,6 +6,10 @@ int main() {
   // drogon::app().loadConfigFile("../config.json");
   // drogon::app().loadConfigFile("../config.yaml");
   // Run HTTP framework,the method will block in the internal event loop
+
+  // Load html file
+  drogon::app().setDocumentRoot("./Frontend_Implementation");
+
   drogon::app().run();
   return 0;
 }

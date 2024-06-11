@@ -8,13 +8,16 @@ void TestCtrl::asyncHandleHttpRequest(
 
   // get the path of our image
   // NOTE: Will need to update path to match your local path
-  std::string imagePath = "/Users/samiahmed/Downloads/val2017/000000388258.jpg";
+  std::string filePath;
 
-  // read our image from our path and store it in image
-  std::ifstream imageData(imagePath, std::ios::binary);
-
-  // throw error if image not found
-  if (!imageData) {
+  if (req->path() == "/test") {
+    // read our image from our path and store it in image
+    filePath = "/Users/samiahmed/Downloads/val2017/000000388258.jpg";
+  } else if (req->path() == "/") {
+    filePath = "/Users/samiahmed/Projects/URV/distann/Frontend_Implementation/"
+               "web.html";
+  } else {
+    // throw error if image not found
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody("Image not found");
     resp->setContentTypeCode(CT_TEXT_HTML);
@@ -22,16 +25,23 @@ void TestCtrl::asyncHandleHttpRequest(
     callback(resp);
   }
 
+  std::ifstream fileData(filePath, std::ios::binary);
+
   // store our image as string data
   std::ostringstream out;
-  out << imageData.rdbuf();
-  std::string image = out.str();
+  out << fileData.rdbuf();
+  std::string file = out.str();
 
   // create our response to out put the image
   auto resp = HttpResponse::newHttpResponse();
-  resp->setBody(std::move(image));
-  resp->setContentTypeCode(CT_IMAGE_JPG);
-  resp->setStatusCode(k200OK);
+  resp->setBody(std::move(file));
 
+  if (req->path() == "/test") {
+    resp->setContentTypeCode(CT_IMAGE_JPG);
+  } else if (req->path() == "/") {
+    resp->setContentTypeCode(CT_TEXT_HTML);
+  }
+
+  resp->setStatusCode(k200OK);
   callback(resp);
 }
