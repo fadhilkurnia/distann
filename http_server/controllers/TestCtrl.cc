@@ -10,7 +10,7 @@ void TestCtrl::asyncHandleHttpRequest(
   // NOTE: Will need to update path to match your local path
   std::string filePath;
 
-  if (req->path() == "/test") {
+  if (req->path() == "/test" && req->method() == drogon::Get) {
     // read our image from our path and store it in image
     filePath = "/Users/samiahmed/Downloads/val2017/000000388258.jpg";
   } else if (req->path() == "/") {
@@ -36,7 +36,7 @@ void TestCtrl::asyncHandleHttpRequest(
   auto resp = HttpResponse::newHttpResponse();
   resp->setBody(std::move(file));
 
-  if (req->path() == "/test") {
+  if (req->path() == "/test" && req->method() == drogon::Get) {
     resp->setContentTypeCode(CT_IMAGE_JPG);
   } else if (req->path() == "/") {
     resp->setContentTypeCode(CT_TEXT_HTML);
