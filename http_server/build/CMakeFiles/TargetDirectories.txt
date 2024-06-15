@@ -1,6 +1,0 @@
-/Users/samiahmed/Projects/URV/distann/http_server/build/CMakeFiles/http_server.dir
-/Users/samiahmed/Projects/URV/distann/http_server/build/CMakeFiles/edit_cache.dir
-/Users/samiahmed/Projects/URV/distann/http_server/build/CMakeFiles/rebuild_cache.dir
-/Users/samiahmed/Projects/URV/distann/http_server/build/test/CMakeFiles/http_server_test.dir
-/Users/samiahmed/Projects/URV/distann/http_server/build/test/CMakeFiles/edit_cache.dir
-/Users/samiahmed/Projects/URV/distann/http_server/build/test/CMakeFiles/rebuild_cache.dir
