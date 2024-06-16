@@ -4,18 +4,33 @@
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
     std::function<void(const HttpResponsePtr &)> &&callback) {
-  // write your application logic here
 
-  // get the path of our image
-  // NOTE: Will need to update path to match your local path
-  std::string filePath;
+  // Set the homeDirectory for our project to the GitHub Repo main branch
+  std::string homeDirectory =
+      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/";
+  // Set the image directory where we will get our images from
+  std::string imageDirectory =
+      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/images";
 
   if (req->path() == "/test" && req->method() == drogon::Get) {
-    // read our image from our path and store it in image
-    filePath = "/Users/samiahmed/Downloads/val2017/000000388258.jpg";
+    // request for images will return relative paths of images
+    std::string image = imageDirectory + "image1.jpg";
+
+    auto resp = HttpResponse::newHttpResponse();
+    resp->setBody(image);
+    resp->setContentTypeCode(CT_TEXT_HTML);
+    resp->setStatusCode(k200OK);
+    callback(resp);
   } else if (req->path() == "/") {
-    filePath = "/Users/samiahmed/Projects/URV/distann/Frontend_Implementation/"
-               "web.html";
+    // request for the homepage will return the path to the homepage which gets
+    // generated in front-end
+    std::string homePage = homeDirectory + "Frontend_Implementation/web.html";
+
+    auto resp = HttpResponse::newHttpResponse();
+    resp->setBody(homePage);
+    resp->setContentTypeCode(CT_TEXT_HTML);
+    resp->setStatusCode(k200OK);
+    callback(resp);
   } else {
     // throw error if image not found
     auto resp = HttpResponse::newHttpResponse();
@@ -24,24 +39,4 @@ void TestCtrl::asyncHandleHttpRequest(
     resp->setStatusCode(k404NotFound);
     callback(resp);
   }
-
-  std::ifstream fileData(filePath, std::ios::binary);
-
-  // store our image as string data
-  std::ostringstream out;
-  out << fileData.rdbuf();
-  std::string file = out.str();
-
-  // create our response to out put the image
-  auto resp = HttpResponse::newHttpResponse();
-  resp->setBody(std::move(file));
-
-  if (req->path() == "/test" && req->method() == drogon::Get) {
-    resp->setContentTypeCode(CT_IMAGE_JPG);
-  } else if (req->path() == "/") {
-    resp->setContentTypeCode(CT_TEXT_HTML);
-  }
-
-  resp->setStatusCode(k200OK);
-  callback(resp);
 }
