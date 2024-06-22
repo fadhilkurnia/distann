@@ -1030,5 +1030,4 @@ CMakeFiles/http_server.dir/controllers/TestCtrl.cc.o: \
   /usr/local/include/drogon/nosql/RedisResult.h \
   /usr/local/include/drogon/nosql/RedisException.h \
   /usr/local/include/drogon/nosql/RedisSubscriber.h \
-  /usr/local/include/trantor/net/Resolver.h \
-  /Library/Developer/CommandLineTools/SDKs/MacOSX14.4.sdk/usr/include/c++/v1/fstream
+  /usr/local/include/trantor/net/Resolver.h
