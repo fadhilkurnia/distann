@@ -5,7 +5,7 @@ void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
     std::function<void(const HttpResponsePtr &)> &&callback) {
 
-  std::string homeDirectory = "~/Projects/URV/distann";
+  std::string homeDirectory = "/Users/samiahmed/Projects/URV/distann";
 
   if (req->path() == "/search" && req->method() == drogon::Get) {
     // store the text prompt
