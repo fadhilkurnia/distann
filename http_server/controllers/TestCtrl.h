@@ -13,7 +13,8 @@ public:
   // list path definitions here;
   // PATH_ADD("/path", "filter1", "filter2", HttpMethod1, HttpMethod2...);
   PATH_ADD("/", Get, Post);
-  PATH_ADD("/test", Get);
+  PATH_ADD("/search", Get, Post);
+  PATH_ADD("/images", Get, Post);
 
   PATH_LIST_END
 };

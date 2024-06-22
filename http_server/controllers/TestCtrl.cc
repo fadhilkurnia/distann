@@ -1,32 +1,42 @@
 #include "TestCtrl.h"
+#include <fstream>
 
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
     std::function<void(const HttpResponsePtr &)> &&callback) {
 
-  // Set the homeDirectory for our project to the GitHub Repo main branch
-  std::string homeDirectory =
-      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/";
-  // Set the image directory where we will get our images from
-  std::string imageDirectory =
-      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/images/";
+  std::string homeDirectory = "~/Projects/URV/distann/";
 
-  if (req->path() == "/test" && req->method() == drogon::Get) {
+  if (req->path() == "/search" && req->method() == drogon::Get) {
     // store the text prompt
     auto prompt = req->getQuery();
 
     // request for images will return relative paths of images
-    std::string image = imageDirectory + "image1.jpg";
+    std::string imagePath = "images/image1.jpg";
+
+    auto resp = HttpResponse::newHttpResponse();
+    resp->setBody(imagePath);
+    resp->setContentTypeCode(CT_TEXT_HTML);
+    resp->setStatusCode(k200OK);
+    callback(resp);
+  } else if (req->path() == "/images" && req->method() == drogon::Get) {
+    std::string imagePath = homeDirectory + "images/image1.jpg";
+
+    // store our image as string data
+    std::ifstream imageData(imagePath, std::ios::binary);
+    std::ostringstream oss;
+    oss << imageData.rdbuf();
+    std::string image = oss.str();
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody(image);
-    resp->setContentTypeCode(CT_TEXT_HTML);
+    resp->setContentTypeCode(CT_IMAGE_JPG);
     resp->setStatusCode(k200OK);
     callback(resp);
   } else if (req->path() == "/") {
     // request for the homepage will return the path to the homepage which gets
     // generated in front-end
-    std::string homePage = homeDirectory + "Frontend_Implementation/web.html";
+    std::string homePage = "Frontend_Implementation/web.html";
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody(homePage);
@@ -34,9 +44,9 @@ void TestCtrl::asyncHandleHttpRequest(
     resp->setStatusCode(k200OK);
     callback(resp);
   } else {
-    // throw error if image not found
+    // throw error if endpoint not found
     auto resp = HttpResponse::newHttpResponse();
-    resp->setBody("Image not found");
+    resp->setBody("Endpoint not found");
     resp->setContentTypeCode(CT_TEXT_HTML);
     resp->setStatusCode(k404NotFound);
     callback(resp);
