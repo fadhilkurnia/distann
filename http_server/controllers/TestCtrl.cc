@@ -1,5 +1,4 @@
 #include "TestCtrl.h"
-#include <fstream>
 
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
@@ -10,9 +9,12 @@ void TestCtrl::asyncHandleHttpRequest(
       "https://raw.githubusercontent.com/fadhilkurnia/distann/main/";
   // Set the image directory where we will get our images from
   std::string imageDirectory =
-      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/images";
+      "https://raw.githubusercontent.com/fadhilkurnia/distann/main/images/";
 
   if (req->path() == "/test" && req->method() == drogon::Get) {
+    // store the text prompt
+    auto prompt = req->getQuery();
+
     // request for images will return relative paths of images
     std::string image = imageDirectory + "image1.jpg";
 
