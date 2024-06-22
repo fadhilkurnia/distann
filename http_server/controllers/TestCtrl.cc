@@ -13,11 +13,7 @@ void TestCtrl::asyncHandleHttpRequest(
 
   if (req->path() == "/test" && req->method() == drogon::Get) {
     // store the text prompt
-    auto prompt = req->getParameters();
-    std::string text;
-    for (auto &p : prompt) {
-      text += p.second + " ";
-    }
+    auto prompt = req->getQuery();
 
     // request for images will return relative paths of images
     std::string image = imageDirectory + "image1.jpg";
