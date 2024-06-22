@@ -5,14 +5,14 @@ void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
     std::function<void(const HttpResponsePtr &)> &&callback) {
 
-  std::string homeDirectory = "~/Projects/URV/distann/";
+  std::string homeDirectory = "~/Projects/URV/distann";
 
   if (req->path() == "/search" && req->method() == drogon::Get) {
     // store the text prompt
     auto prompt = req->getQuery();
 
     // request for images will return relative paths of images
-    std::string imagePath = "images/image1.jpg";
+    std::string imagePath = "/images/image1.jpg";
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody(imagePath);
@@ -20,7 +20,7 @@ void TestCtrl::asyncHandleHttpRequest(
     resp->setStatusCode(k200OK);
     callback(resp);
   } else if (req->path() == "/images" && req->method() == drogon::Get) {
-    std::string imagePath = homeDirectory + "images/image1.jpg";
+    std::string imagePath = homeDirectory + "/images/image1.jpg";
 
     // store our image as string data
     std::ifstream imageData(imagePath, std::ios::binary);
@@ -29,14 +29,14 @@ void TestCtrl::asyncHandleHttpRequest(
     std::string image = oss.str();
 
     auto resp = HttpResponse::newHttpResponse();
-    resp->setBody(image);
+    resp->setBody(std::move(image));
     resp->setContentTypeCode(CT_IMAGE_JPG);
     resp->setStatusCode(k200OK);
     callback(resp);
   } else if (req->path() == "/") {
     // request for the homepage will return the path to the homepage which gets
     // generated in front-end
-    std::string homePage = "Frontend_Implementation/web.html";
+    std::string homePage = "/Frontend_Implementation/web.html";
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setBody(homePage);
