@@ -1,5 +1,4 @@
 #include "TestCtrl.h"
-#include <fstream>
 
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
@@ -15,8 +14,10 @@ void TestCtrl::asyncHandleHttpRequest(
   if (req->path() == "/test" && req->method() == drogon::Get) {
     // store the text prompt
     auto prompt = req->getParameters();
-    std::string text = prompt["message"];
-    std::cout << text;
+    std::string text;
+    for (auto &p : prompt) {
+      text += p.second + " ";
+    }
 
     // request for images will return relative paths of images
     std::string image = imageDirectory + "image1.jpg";
@@ -37,9 +38,9 @@ void TestCtrl::asyncHandleHttpRequest(
     resp->setStatusCode(k200OK);
     callback(resp);
   } else {
-    // throw error if response not found
+    // throw error if image not found
     auto resp = HttpResponse::newHttpResponse();
-    resp->setBody("Response not found");
+    resp->setBody("Image not found");
     resp->setContentTypeCode(CT_TEXT_HTML);
     resp->setStatusCode(k404NotFound);
     callback(resp);
