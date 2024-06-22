@@ -11,6 +11,11 @@ function send(){
     .then(res => (res.ok ? res.json() : Promise.reject(new Error(res.statusText))))
     .then((data) => {
         console.log(data);
+        
+        const temp_placeHolder = []; //temp array (remove later) 
+        for(var i = 1; i < 10 ; i++){
+            document.getElementById("img" + i).src = temp_placeHolder[i-1];
+        }
     });
     //received the response from the backend and set the img1 - img10 to the images that we get from the backend 
     //if there is text: set the text to the description that we get from the backend
