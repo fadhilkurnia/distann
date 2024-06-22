@@ -173,7 +173,7 @@
 
       // TODO: contact the actual distann backend
       $.ajax({
-        url: '/example-result.json?' + prompt,
+        url: '/example-result.json?prompt=' + prompt,
         type: 'GET',
         success: function(data) {
           displayResults(data.results);
