@@ -4,48 +4,59 @@
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
     std::function<void(const HttpResponsePtr &)> &&callback) {
+  auto resp = HttpResponse::newHttpResponse();
 
-  std::string homeDirectory = "/Users/samiahmed/Projects/URV/distann";
+  std::string imageDirectory = "/Users/samiahmed/Projects/URV/distann/images/";
+  std::string localHost = "http://localhost";
 
   if (req->path() == "/search" && req->method() == drogon::Get) {
     // store the text prompt
     auto prompt = req->getQuery();
+    // request for images will return url of images
+    std::string imageURL = localHost + "/images/image1.jpg";
 
-    // request for images will return relative paths of images
-    std::string imagePath = "/images/image1.jpg";
+    std::string response =
+        "{\"prompt\": \"" + prompt + "\", \"url\": \"" + imageURL + "\"}";
 
-    auto resp = HttpResponse::newHttpResponse();
-    resp->setBody(imagePath);
-    resp->setContentTypeCode(CT_TEXT_HTML);
+    resp->setBody(response);
+    resp->setContentTypeCode(CT_APPLICATION_JSON);
     resp->setStatusCode(k200OK);
     callback(resp);
-  } else if (req->path() == "/images" && req->method() == drogon::Get) {
-    std::string imagePath = homeDirectory + "/images/image1.jpg";
+  } else if (req->path() == "/images/{image_name}" &&
+             req->method() == drogon::Get) {
+    // get last part of URL (string) if it does not exist return error
+    std::string imageName = req->getParameter("image_name");
+    std::string imagePath = imageDirectory + imageName;
 
     // store our image as string data
     std::ifstream imageData(imagePath, std::ios::binary);
+
+    // check that our image exists
+    if (!imageData) {
+      resp->setBody("Image not found");
+      resp->setContentTypeCode(CT_TEXT_HTML);
+      resp->setStatusCode(k404NotFound);
+      callback(resp);
+    }
+
     std::ostringstream oss;
     oss << imageData.rdbuf();
     std::string image = oss.str();
 
-    auto resp = HttpResponse::newHttpResponse();
     resp->setBody(std::move(image));
     resp->setContentTypeCode(CT_IMAGE_JPG);
     resp->setStatusCode(k200OK);
     callback(resp);
   } else if (req->path() == "/") {
-    // request for the homepage will return the path to the homepage which gets
-    // generated in front-end
-    std::string homePage = "/Frontend_Implementation/web.html";
+    // post message to backend
+    std::string message = "Welcome to backend server";
 
-    auto resp = HttpResponse::newHttpResponse();
-    resp->setBody(homePage);
+    resp->setBody(message);
     resp->setContentTypeCode(CT_TEXT_HTML);
     resp->setStatusCode(k200OK);
     callback(resp);
   } else {
     // throw error if endpoint not found
-    auto resp = HttpResponse::newHttpResponse();
     resp->setBody("Endpoint not found");
     resp->setContentTypeCode(CT_TEXT_HTML);
     resp->setStatusCode(k404NotFound);
