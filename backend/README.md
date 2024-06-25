@@ -49,7 +49,14 @@ TBD
    `http://localhost:9000`.
 
 
-# Example request-response
+## Example request-response
+
+List of backend API endpoints:
+| Endpoint                       | HTTP Method   | Example Response          |
+| --------                       | -------       |  ---                      |
+| `/images/<filename>`           | `GET`         | an actual image, if exist |
+| `/api/search?prompt=<prompt>`  | `GET`         | See the example below     |
+
 
 Example request:
 ```
