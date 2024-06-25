@@ -47,3 +47,59 @@ TBD
    The command above will run the backend in the default port of `9000`.
    You can access the backend in your browser by visiting 
    `http://localhost:9000`.
+
+
+# Example request-response
+
+Example request:
+```
+curl "http://localhost:9000/api/search?prompt=cute cats and dogs in a house"
+```
+Example of a success response:
+```
+{
+    "prompt": "cute cats and dogs in a house",
+    "results": [
+        {
+            "id": 3,
+            "url": "http://localhost:9000/images/0003.png",
+            "alt": "cute cats in a house"
+        },
+        {
+            "id": 5,
+            "url": "http://localhost:9000/images/0005.png",
+            "alt": "cute dogs in a house"
+        },
+        {
+            "id": 84,
+            "url": "http://localhost:9000/images/0084.png",
+            "alt": "cats and dogs"
+        },
+        {
+            "id": 97,
+            "url": "http://localhost:9000/images/0097.png",
+            "alt": "cute cats and dogs"
+        },
+        {
+            "id": 102,
+            "url": "http://localhost:9000/images/0102.png",
+            "alt": "cute cats in a tree house"
+        },
+        {
+            "id": 682,
+            "url": "http://localhost:9000/images/0682.png",
+            "alt": "dogs in their house"
+        },
+        {
+            "id": 983,
+            "url": "http://localhost:9000/images/0983.png",
+            "alt": "house full of cats"
+        },
+        {
+            "id": 995,
+            "url": "http://localhost:9000/images/0995.png",
+            "alt": "cute house in the neighborhood"
+        }
+    ]
+}
+```
