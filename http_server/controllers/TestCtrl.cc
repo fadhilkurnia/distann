@@ -1,5 +1,8 @@
 #include "TestCtrl.h"
 #include <fstream>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 void TestCtrl::asyncHandleHttpRequest(
     const HttpRequestPtr &req,
@@ -15,10 +18,17 @@ void TestCtrl::asyncHandleHttpRequest(
     // request for images will return url of images
     std::string imageURL = localHost + "/images/image1.jpg";
 
-    std::string response =
-        "{\"prompt\": \"" + prompt + "\", \"url\": \"" + imageURL + "\"}";
+    // Create our JSON response
+    json response;
+    response["prompt"] = prompt;
+    response["results"] = json::array();
+    json result;
+    result["id"] = 1;
+    result["url"] = imageURL;
+    result["alt"] = "Bike and Plane";
+    response["results"].push_back(result);
 
-    resp->setBody(response);
+    resp->setBody(response.dump());
     resp->setContentTypeCode(CT_APPLICATION_JSON);
     resp->setStatusCode(k200OK);
     callback(resp);

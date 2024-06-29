@@ -12,7 +12,7 @@ public:
   PATH_LIST_BEGIN
   // list path definitions here;
   PATH_ADD("/", Get, Post);
-  PATH_ADD("/search", Get, Post);
+  PATH_ADD("/search", Get);
   PATH_ADD("/images/{image_name}", Get);
 
   PATH_LIST_END
