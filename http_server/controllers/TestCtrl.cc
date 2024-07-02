@@ -34,7 +34,9 @@ void TestCtrl::asyncHandleHttpRequest(
     callback(resp);
   } else if (req->path() == "/images/{image_name}" &&
              req->method() == drogon::Get) {
-    // get last part of URL (string) if it does not exist return error
+    // TODO: Either re-write in main.cc or manually split the path to get the
+    // image na,e get last part of URL (string) if it does not exist return
+    // error
     std::string imageName = req->getParameter("image_name");
     std::string imagePath = imageDirectory + imageName;
 
