@@ -1,5 +1,9 @@
 #include <drogon/drogon.h>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <string>
+
+using json = nlohmann::json;
 
 using namespace drogon;
 
@@ -18,46 +22,78 @@ int main() {
                         });
 
   // TODO: response with static images
-  app().registerHandler("/images/{image_name}",
-                        [](const HttpRequestPtr &req, Callback &&callback,
-                           const std::string image_name) {
-                          auto resp = HttpResponse::newHttpResponse();
+  app().registerHandler(
+      "/images/{image_name}", [](const HttpRequestPtr &req, Callback &&callback,
+                                 const std::string image_name) {
+        auto resp = HttpResponse::newHttpResponse();
 
-                          resp->setBody(image_name);
-                          
-                          resp->setStatusCode(k200OK);
-                          callback(resp);
-                        });
+        std::string imageDirectory =
+            "/Users/samiahmed/Projects/URV/distann/backend/images/";
+        std::string imagePath = imageDirectory + image_name;
 
-  app().registerHandler("/api/search", [](const HttpRequestPtr &req,
-                                          Callback            &&callback) {
-    auto resp   = HttpResponse::newHttpResponse();
-    auto prompt = req->getOptionalParameter<std::string>("prompt");
+        // store our image as string data
+        std::ifstream imageData(imagePath, std::ios::binary);
 
-    // handle empty prompt
-    if (!prompt.has_value()) {
-      resp->setStatusCode(k400BadRequest);
-      resp->setBody("{\"error\": \"prompt unspecified\"}");
-      resp->setContentTypeCode(CT_APPLICATION_JSON);
-      callback(resp);
-      return;
-    }
+        // check that our image exists
+        if (!imageData) {
+          resp->setBody("Image not found");
+          resp->setContentTypeCode(CT_TEXT_HTML);
+          resp->setStatusCode(k404NotFound);
+          callback(resp);
+        }
 
-    // TODO: convert prompt to an embedding e
-    // TODO: do similarity search using e over the dataset
-    // TODO: return top 5 similar results
+        std::ostringstream oss;
+        oss << imageData.rdbuf();
+        std::string image = oss.str();
 
-    std::string response_content = "{\"prompt\": \"" + prompt.value() + "\"}";
+        resp->setBody(std::move(image));
+        resp->setContentTypeCode(CT_IMAGE_PNG);
+        resp->setStatusCode(k200OK);
+        callback(resp);
+      });
 
-    resp->setBody(response_content);
-    resp->setContentTypeCode(CT_APPLICATION_JSON);
-    resp->setStatusCode(k200OK);
-    callback(resp);
-  });
+  app().registerHandler(
+      "/api/search", [](const HttpRequestPtr &req, Callback &&callback) {
+        auto resp = HttpResponse::newHttpResponse();
+        auto prompt = req->getOptionalParameter<std::string>("prompt");
+
+        // handle empty prompt
+        if (!prompt.has_value()) {
+          resp->setStatusCode(k400BadRequest);
+          resp->setBody("{\"error\": \"prompt unspecified\"}");
+          resp->setContentTypeCode(CT_APPLICATION_JSON);
+          callback(resp);
+          return;
+        }
+
+        // TODO: convert prompt to an embedding e
+        // TODO: do similarity search using e over the dataset
+        // TODO: return top 5 similar results
+
+        // std::string response_content = "{\"prompt\": \"" + prompt.value() +
+        // "\"}";
+        std::string localHost = "http://localhost:9000";
+        std::string imageURL = localHost + "/images/cat.png";
+
+        // Create our JSON response
+        json response;
+        response["prompt"] = prompt.value();
+        response["results"] = json::array();
+        json result;
+        result["id"] = 1;
+        result["url"] = imageURL;
+        result["alt"] = "Cat";
+        response["results"].push_back(result);
+
+        resp->setBody(response.dump());
+        resp->setContentTypeCode(CT_APPLICATION_JSON);
+        resp->setStatusCode(k200OK);
+        callback(resp);
+      });
 
   // run the backend server in the specified host/interface and port.
   std::string host = "0.0.0.0";
-  int         port = 9000;
+  int port = 9000;
   LOG_INFO << "Running distann backend server on " << host << ":" << port;
   app().addListener(host, port).run();
 
