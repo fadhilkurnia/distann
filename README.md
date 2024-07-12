@@ -4,7 +4,7 @@ Distributed ANN Serving
 ## Running the frontend
 ```
 cd frontend
-python3 -m http.server
+python3 -m http.server (for linux and mac)
 ```
 Then go to your browser to access http://localhost:8000/
 
@@ -26,8 +26,12 @@ If you can't install drogon on windows:
   sudo apt install git
   ```
 
+Before cloning repo make sure you have followed all drogon installation steps found here. `https://github.com/drogonframework/drogon/wiki/ENG-02-Installation`
+
 - To clone a repository on git follow the steps here: `https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository#cloning-a-repository`. 
-You would need your Github username and create a token (settings -> Developer settings -> Personal Access Tokens -> Tokens -> Generate new token)
+You would need your Github username and create a token (settings -> Developer settings -> Personal Access Tokens -> Tokens -> Generate new token).
+
+-When generating token make sure you toggle 'repo' on the select scopes section to allow you to have acess to the repo as it is private.  
 
 1. Compile the backend
     ```
@@ -35,6 +39,6 @@ You would need your Github username and create a token (settings -> Developer se
     cmake ..
     make
     ```
-    The last command will generate an executable called `backend` (or `backend.exe` in Windows).
+    The last command will generate an executable called `backend` (or `backend.exe` in Windows). On linux or Mac can run open backend by doing ./backend
 2. 
 TBD
