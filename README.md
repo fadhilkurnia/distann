@@ -31,7 +31,7 @@ Before cloning repo make sure you have followed all drogon installation steps fo
 - To clone a repository on git follow the steps here: `https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository#cloning-a-repository`. 
 You would need your Github username and create a token (settings -> Developer settings -> Personal Access Tokens -> Tokens -> Generate new token).
 
--When generating token make sure you toggle 'repo' on the select scopes section to allow you to have acess to the repo as it is private.  
+- When generating token make sure you toggle 'repo' on the select scopes section to allow you to have acess to the repo as it is private.  
 
 1. Compile the backend
     ```
