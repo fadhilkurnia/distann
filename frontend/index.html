@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+
+  <head lang="en">
+    <title>distann - distributed model serving</title>
+    <link rel="icon" href="favicon.svg" />
+
+    <!-- Import Google Icon Font -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet">
+
+    <!-- Import materialize.css -->
+    <link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+
+    <!-- Import custom css -->
+    <link rel="StyleSheet" href="style.css" />
+  </head>
+
+  <body>
+
+    <nav>
+      <div class="nav-wrapper">
+        <a href="#" class="brand-logo center">distann</a>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="row" style="margin-top: 30px;"></div>
+
+      <div class="row center">
+        <h5 class="header col s12 light grey-text text-lighten-1">
+          retrieve images with similarity search and embedding model
+        </h5>
+      </div>
+
+      <!-- search bar -->
+      <div class="row">
+        <div class="col s6 offset-s3">
+          <div class="row">
+            <div class="input-field col s12 center-align">
+              <i class="material-icons prefix">search</i>
+              <input type="text" id="prompt-input" class="autocomplete">
+              <label for="prompt-input">input your prompt ...</label>
+              <br>
+              <small class="light grey-text">
+                Example: "cute brown dogs", "train moving to the right".
+              </small>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col s4 offset-s4 center-align">
+              <a
+                class="waves-effect waves-light btn-flat btn-small red accent-1"
+                id="prompt-send-btn">
+                Search
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- images result -->
+      <div class="row">
+        <div id="loading" class="col s12 center-align"
+          style="display: none;">
+          <img
+            src="https://cdnjs.cloudflare.com/ajax/libs/bxslider/4.2.5/images/bx_loader.gif">
+        </div>
+        <div class="col s8 offset-s2">
+          <div id="result-area" class="row" style="display: none;">
+            <div class="col s4">
+              <img
+                id="result-img-1"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-2"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-3"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-4"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-5"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-6"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-7"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+            <div class="col s4">
+              <img
+                id="result-img-8"
+                class="materialboxed"
+                width="100%"
+                src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </body>
+
+  <!-- include javascript -->
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+    integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+    crossorigin="anonymous"></script>
+  <script type="text/javascript" src="script.js"></script>
+
+  <!-- main script -->
+  <script>
+
+    function displayResults(results) {
+      $("#result-area").hide();
+      
+      $("#result-area").html("");
+      let resultRaw = "";
+      for (let i = 0; i < results.length; ++i) {
+        imgID = results[i].id;
+        imgUrl = results[i].url;
+        imgAlt = results[i].alt;
+        resultRaw += `
+          <div class="col s4">
+            <img
+              id="${imgID}"
+              class="materialboxed"
+              width="100%"
+              src="${imgUrl}"
+              alt="${imgAlt}">
+          </div>`;
+      }
+      $("#result-area").html(resultRaw);
+      
+      $("#result-area").show();
+    }
+
+    function retrieveImages(prompt) {
+      $("#loading").show();
+
+      // TODO: contact the actual distann backend
+      $.ajax({
+        url: '/example-result.json?prompt=' + prompt,
+        type: 'GET',
+        success: function(data) {
+          displayResults(data.results);
+          console.log("success");
+          console.log(data);
+          $("#loading").hide();
+        },
+        error: function(data) {
+          $("#loading").hide();
+          alert("failed to retrieve data from backend :( " + data);
+        }
+      });
+    }
+
+    function handlePrompt() {
+      var prompt = $('#prompt-input').val();
+      if (prompt == "") {
+        alert("prompt cannot be empty");
+        return;
+      }
+
+      retrieveImages(prompt);
+    }
+
+    // event: user press enter after typing prompt
+    $('#prompt-input').on('keypress', function(e) {
+      if (e.which == 13) {
+        handlePrompt();
+      }
+    })
+
+    // event: user click search button
+    $('#prompt-send-btn').on('click', function(e) {
+      handlePrompt();
+    })
+  </script>
+
+</html>
