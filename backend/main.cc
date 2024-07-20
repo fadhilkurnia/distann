@@ -88,11 +88,11 @@ int main() {
         std::string imageURL = localHost + "/images/cat.png";
 
         // TODO: convert prompt to an embedding e
-        // TODO: do similarity search using e over the dataset
+        // TODO: do similarity search using searchKnn over the index with e
         // TODO: return top 5 similar results
+        // TODO: convert the embeddings to image id's
 
-        // once index is built make prompt embedding and then use that with
-        // searchKnn Create our JSON response
+        // create json response
         json response;
         response["prompt"] = prompt.value();
         response["results"] = json::array();
