@@ -1,13 +1,31 @@
+#include <"/Users/samiahmed/Projects/URV/hnswlib/hnswlib.h">
 #include <drogon/drogon.h>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string>
 
 using json = nlohmann::json;
-
 using namespace drogon;
 
 int main() {
+
+  // Creat our hnsw index that will be queried on when we search for images
+  // using our prompt hnsw alg params
+  int dim = 16;
+  int max_elements = 100;
+  int M = 16;
+  int ef_construction = 200;
+
+  // create index
+  hnswlib::L2Space space(dim);
+  hnswlib::HierarchicalNSW<float> *alg_hnsw =
+      new hnswlib::HierarchicalNSW<float>(&space, max_elements, M,
+                                          ef_construction);
+
+  // Add images to index
+  for (int i = 0; i < max_elements; i++) {
+    alg_hnsw->addPoint(/*image*/ +i * dim, i);
+  }
 
   app().setLogLevel(trantor::Logger::kDebug);
 
@@ -66,16 +84,15 @@ int main() {
           return;
         }
 
+        std::string localHost = "http://localhost:9000";
+        std::string imageURL = localHost + "/images/cat.png";
+
         // TODO: convert prompt to an embedding e
         // TODO: do similarity search using e over the dataset
         // TODO: return top 5 similar results
 
-        // std::string response_content = "{\"prompt\": \"" + prompt.value() +
-        // "\"}";
-        std::string localHost = "http://localhost:9000";
-        std::string imageURL = localHost + "/images/cat.png";
-
-        // Create our JSON response
+        // once index is built make prompt embedding and then use that with
+        // searchKnn Create our JSON response
         json response;
         response["prompt"] = prompt.value();
         response["results"] = json::array();
