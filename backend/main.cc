@@ -1,31 +1,63 @@
-#include <"/Users/samiahmed/Projects/URV/hnswlib/hnswlib.h">
 #include <drogon/drogon.h>
 #include <fstream>
+#include <hnswlib/hnswlib.h>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 using json = nlohmann::json;
 using namespace drogon;
 
 int main() {
 
-  // Creat our hnsw index that will be queried on when we search for images
-  // using our prompt hnsw alg params
-  int dim = 16;
+  // Open file with our embedded image vectors
+  const char *embeddingsFile = "../imageEmbeddings.txt";
+  std::ifstream in(embeddingsFile, std::ios::binary);
+  if (!in) {
+    std::cerr << "Error opening file" << std::endl;
+    return 1;
+  }
+
+  // Read the dimension of the embeddings
+  int dim;
+  in.read(reinterpret_cast<char *>(&dim), sizeof(int));
+  if (!in) {
+    std::cerr << "Error reading dimension" << std::endl;
+    return 1;
+  }
+
+  // Params for HNSW alg
   int max_elements = 100;
   int M = 16;
   int ef_construction = 200;
 
-  // create index
+  // Create HNSW index
   hnswlib::L2Space space(dim);
   hnswlib::HierarchicalNSW<float> *alg_hnsw =
       new hnswlib::HierarchicalNSW<float>(&space, max_elements, M,
                                           ef_construction);
 
-  // Add images to index
-  for (int i = 0; i < max_elements; i++) {
-    alg_hnsw->addPoint(/*image*/ +i * dim, i);
+  // Create vector to hold data we read from input file
+  std::vector<float> currEmbedd(dim);
+  int embeddCount = 0;
+
+  // While there is data to read, go to front of each embedding and read data
+  // into vector
+  while (in.read(reinterpret_cast<char *>(currEmbedd.data()),
+                 dim * sizeof(float))) {
+    if (!in) {
+      std::cerr << "Error reading embedding values" << std::endl;
+      return 1;
+    }
+
+    // Add vector to index
+    alg_hnsw->addPoint(currEmbedd.data(), embeddCount++);
   }
+
+  in.close();
+  std::cout << "Embeddings have been successfully added to the HNSW index"
+            << std::endl;
 
   app().setLogLevel(trantor::Logger::kDebug);
 
