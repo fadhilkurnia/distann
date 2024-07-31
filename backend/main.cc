@@ -1,28 +1,24 @@
-//previous headers 
 #include <drogon/drogon.h>
 #include <fstream>
-// #include <hnswlib/hnswlib.h>
-#include "libs/hnswlib/hnswlib.h"
+#include <hnswlib/hnswlib.h>
 #include <iostream>
-// #include <nlohmann/json.hpp>
-#include "../../json.hpp"
-#include <string>
+#include <nlohmann/json.hpp>
 #include <vector>
 
-//headers for the user embedding 
+// headers for the user embedding
 #include <curl/curl.h>
+#include <iostream>
 #include <stdio.h>
 #include <string>
-#include <iostream>
-
 
 using json = nlohmann::json;
 using namespace drogon;
 
 // Callback function to write response data into a string, for user embedding
-size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* s) {
+size_t WriteCallback(void *contents, size_t size, size_t nmemb,
+                     std::string *s) {
   size_t totalSize = size * nmemb;
-  s->append(static_cast<char*>(contents), totalSize);
+  s->append(static_cast<char *>(contents), totalSize);
   return totalSize;
 }
 
@@ -45,7 +41,7 @@ int main() {
   }
 
   // Params for HNSW alg
-  int max_elements = 100;
+  int max_elements = 1000;
   int M = 16;
   int ef_construction = 200;
 
@@ -71,7 +67,6 @@ int main() {
     // Add vector to index
     alg_hnsw->addPoint(currEmbedd.data(), embeddCount++);
   }
-
   in.close();
   std::cout << "Embeddings have been successfully added to the HNSW index"
             << std::endl;
@@ -119,109 +114,133 @@ int main() {
         callback(resp);
       });
 
-  app().registerHandler(
-      "/api/search", [](const HttpRequestPtr &req, Callback &&callback) {
-        auto resp = HttpResponse::newHttpResponse();
-        auto prompt = req->getOptionalParameter<std::string>("prompt");
+  app().registerHandler("/api/search", [&alg_hnsw](const HttpRequestPtr &req,
+                                                   Callback &&callback) {
+    auto resp = HttpResponse::newHttpResponse();
+    auto prompt = req->getOptionalParameter<std::string>("prompt");
 
-        //prompt either exists or it does not, it is std::optional<std::string>, as such
-        //we should use prompt.value() in our curl code when sending post request 
+    // prompt either exists or it does not, it is std::optional<std::string>, as
+    // such we should use prompt.value() in our curl code when sending post
+    // request
 
-        // handle empty prompt
-        if (!prompt.has_value()) {
-          resp->setStatusCode(k400BadRequest);
-          resp->setBody("{\"error\": \"prompt unspecified\"}");
-          resp->setContentTypeCode(CT_APPLICATION_JSON);
-          callback(resp);
-          return;
-        }
-        //I am too send a post request to my API, I want to eventually start the API 
-        //directlley through C++ code but dont want to use system, looking into windows APIS for that
+    // handle empty prompt
+    if (!prompt.has_value()) {
+      resp->setStatusCode(k400BadRequest);
+      resp->setBody("{\"error\": \"prompt unspecified\"}");
+      resp->setContentTypeCode(CT_APPLICATION_JSON);
+      callback(resp);
+      return;
+    }
+    // I am too send a post request to my API, I want to eventually start the
+    // API directlley through C++ code but dont want to use system, looking into
+    // windows APIS for that
 
-        //following code form curl documentation for simple HTTP-POST request 
+    // following code form curl documentation for simple HTTP-POST request
 
-        /*
-        ****NOTES****
-        Make sure to start running the API server before testing code, will eventually add 
-        windows API C++ functionality which will run code directlly from here
+    /*
+    ****NOTES****
+    Make sure to start running the API server before testing code, will
+    eventually add windows API C++ functionality which will run code directlly
+    from here
 
-        */
+    */
 
-        //Start of user embedding code
+    // Start of user embedding code
 
-        CURL* curl;
-        CURLcode res;
-        std::string responseString; // Variable to store the response
+    CURL *curl;
+    CURLcode res;
+    std::string responseString; // Variable to store the response
 
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-        curl = curl_easy_init();
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
 
-        if(curl){
-          curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/embed");
+    if (curl) {
+      curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/embed");
 
-          // Prepare the user query to be sent to API
-          json payload = {{"query", prompt.value()}};
-          std::string payloadStr = payload.dump();
+      // Prepare the user query to be sent to API
+      json payload = {{"query", prompt.value()}};
+      std::string payloadStr = payload.dump();
 
-          // Set HTTP headers, as required by API
-          struct curl_slist *headers = NULL;
-          headers = curl_slist_append(headers, "Content-Type: application/json");
-          curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+      // Set HTTP headers, as required by API
+      struct curl_slist *headers = NULL;
+      headers = curl_slist_append(headers, "Content-Type: application/json");
+      curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-          // Set POST fields of call
-          curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payloadStr.c_str());
-          curl_easy_setopt(curl, CURLOPT_POST, 1L);
+      // Set POST fields of call
+      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payloadStr.c_str());
+      curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
-          // Set the callback function to capture response, converting CURL object to string to parse JSON
-          curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-          curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseString);
+      // Set the callback function to capture response, converting CURL object
+      // to string to parse JSON
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseString);
 
-          // Perform the request
-          res = curl_easy_perform(curl);
+      // Perform the request
+      res = curl_easy_perform(curl);
 
-          if (res != CURLE_OK) {
-            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-          } else {
-            // Parse the JSON response
-            try {
-              auto data = json::parse(responseString);
-              std::cout << data["embedding"][0];
-            } catch (json::parse_error &e) {
-              std::cerr << "JSON parse error: " << e.what() << std::endl;
+      if (res != CURLE_OK) {
+        fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                curl_easy_strerror(res));
+      } else {
+        try {
+          // Parse the JSON response
+          auto data = json::parse(responseString);
+          if (data.contains("embedding")) {
+            std::vector<float> embedding =
+                data["embedding"].get<std::vector<float>>();
+
+            auto result = alg_hnsw->searchKnn(embedding.data(), 5);
+
+            // Convert the priority queue to a vector with our labels
+            std::vector<hnswlib::labeltype> similarImages;
+            while (!result.empty()) {
+              similarImages.push_back(result.top().second);
+              result.pop();
             }
+
+            std::cout << "Labels:" << std::endl;
+            for (const auto &label : similarImages) {
+              std::cout << label << std::endl;
+            }
+
+          } else {
+            std::cerr << "No embedding found" << std::endl;
           }
-          curl_easy_cleanup(curl);
-          curl_slist_free_all(headers);
+        } catch (json::parse_error &e) {
+          std::cerr << "JSON parse error: " << e.what() << std::endl;
         }
+      }
+      curl_easy_cleanup(curl);
+      curl_slist_free_all(headers);
+    }
 
-        curl_global_cleanup();
+    curl_global_cleanup();
 
-        //End of user embedding code
-      
+    // End of user embedding code
 
-        std::string localHost = "http://localhost:9000";
-        std::string imageURL = localHost + "/images/cat.png";
+    std::string localHost = "http://localhost:9000";
+    std::string imageURL = localHost + "/images/cat.png";
 
-        // TODO: convert prompt to an embedding e
-        // TODO: do similarity search using searchKnn over the index with e
-        // TODO: return top 5 similar results
-        // TODO: convert the embeddings to image id's
+    // TODO: convert prompt to an embedding e
+    // TODO: do similarity search using searchKnn over the index with e
+    // TODO: return top 5 similar results
+    // TODO: convert the embeddings to image id's
 
-        // create json response
-        json response;
-        response["prompt"] = prompt.value();
-        response["results"] = json::array();
-        json result;
-        result["id"] = 1;
-        result["url"] = imageURL;
-        result["alt"] = "Cat";
-        response["results"].push_back(result);
+    // create json response
+    json response;
+    response["prompt"] = prompt.value();
+    response["results"] = json::array();
+    json result;
+    result["id"] = 1;
+    result["url"] = imageURL;
+    result["alt"] = "Cat";
+    response["results"].push_back(result);
 
-        resp->setBody(response.dump());
-        resp->setContentTypeCode(CT_APPLICATION_JSON);
-        resp->setStatusCode(k200OK);
-        callback(resp);
-      });
+    resp->setBody(response.dump());
+    resp->setContentTypeCode(CT_APPLICATION_JSON);
+    resp->setStatusCode(k200OK);
+    callback(resp);
+  });
 
   // run the backend server in the specified host/interface and port.
   std::string host = "0.0.0.0";
