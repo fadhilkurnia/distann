@@ -95,7 +95,7 @@ int main() {
         auto resp = HttpResponse::newHttpResponse();
 
         std::string imageDirectory =
-            "/Linux/Ubuntu/home/adithya/URV/distann/backend/images/";
+            "/Linux/Ubuntu/home/adithya/URV/distann/backend/images/cocoSubset";
         std::string imagePath = imageDirectory + image_name;
 
         // store our image as string data
