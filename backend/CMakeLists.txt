@@ -19,8 +19,12 @@ endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+<<<<<<< HEAD
 include_directories("/Users/samiahmed/Projects/URV/distann/backend/libs")
 
+=======
+# include_directories()
+>>>>>>> acc13887fca4caee3834ef726bcf433c2c191840
 add_executable(${PROJECT_NAME} main.cc)
 
 # ##############################################################################

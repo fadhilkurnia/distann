@@ -1,3 +1,5 @@
+#in order to run: flask --app (filename) run
+
 import numpy as np
 import torch
 import os
