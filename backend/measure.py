@@ -31,7 +31,7 @@ def send_requests(ports, serving_appro, num_requests = 1, throughput_levels = [1
     latencies = {port: [] for port in ports}
 
     for port in ports:
-
+        
         print(f"Starting server on port: {port}, using serving approach: {serving_appro}")
         process = subprocess.Popen(['build/backend', str(port)]) 
         #process = subprocess.Popen(['build/backend', str(port), str(serving_appro)])
@@ -70,16 +70,33 @@ if __name__ == "__main__":
  
     #set serving_appro to to required after implementing the serving approach
     parser.add_argument("--serving_appro", type=int, default=0, help="Serving approach")
+    parser.add_argument("--mode", type=str, default="backend", help="Mode to run the server")
 
     args = parser.parse_args()
     
-    try:
-        processes = send_requests(args.ports, args.serving_appro, args.num_requests)
-        print("Press Ctrl+C to stop the servers")
-        while True:
-            time.sleep(1)
+    if(args.mode == "backend"):
+        #backend mode
+        print("Running in backend mode")
+        try:
+            processes = send_requests(args.ports, args.serving_appro, args.num_requests)
+            print("Press Ctrl+C to stop the servers")
+            while True:
+                time.sleep(1)
 
-    except KeyboardInterrupt:
-        print("Stopping servers...")
-        close_processes(processes)
-        print("All servers stopped.")
+        except KeyboardInterrupt:
+            print("Stopping servers...")
+            close_processes(processes)
+            print("All servers stopped.")
+    else:
+        #proxy mode
+        print("Running in proxy mode")
+        try:
+            processes = send_requests(args.ports, args.serving_appro, args.num_requests)
+            print("Press Ctrl+C to stop the servers")
+            while True:
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            print("Stopping servers...")
+            close_processes(processes)
+            print("All servers stopped.")
