@@ -3,13 +3,13 @@
 #include <hnswlib/hnswlib.h>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <vector>
 
 // headers for the user embedding
 #include <curl/curl.h>
 #include <iostream>
 #include <stdio.h>
-#include <string>
 
 using json = nlohmann::json;
 using namespace drogon;
@@ -53,7 +53,7 @@ int main() {
 
   // Create vector to hold data we read from input file
   std::vector<float> currEmbedd(dim);
-  int embeddCount = 1;
+  int imageLabel = 1;
 
   // While there is data to read, go to front of each embedding and read data
   // into vector
@@ -65,11 +65,9 @@ int main() {
     }
 
     // Add vector to index
-    alg_hnsw->addPoint(currEmbedd.data(), embeddCount++);
+    alg_hnsw->addPoint(currEmbedd.data(), imageLabel++);
   }
   in.close();
-  std::cout << "Embeddings have been successfully added to the HNSW index"
-            << std::endl;
 
   app().setLogLevel(trantor::Logger::kDebug);
 
@@ -83,36 +81,34 @@ int main() {
                           callback(resp);
                         });
 
-  // TODO: response with static images
-  app().registerHandler(
-      "/images/{image_name}", [](const HttpRequestPtr &req, Callback &&callback,
-                                 const std::string image_name) {
-        auto resp = HttpResponse::newHttpResponse();
+  app().registerHandler("/images/{image_name}",
+                        [](const HttpRequestPtr &req, Callback &&callback,
+                           const std::string image_name) {
+                          auto resp = HttpResponse::newHttpResponse();
 
-        std::string imageDirectory =
-            "/Linux/Ubuntu/home/adithya/URV/distann/backend/images/cocoSubset";
-        std::string imagePath = imageDirectory + image_name;
+                          std::string imageDirectory = "../images/cocoSubset/";
+                          std::string imagePath = imageDirectory + image_name;
 
-        // store our image as string data
-        std::ifstream imageData(imagePath, std::ios::binary);
+                          // store our image as string data
+                          std::ifstream imageData(imagePath, std::ios::binary);
 
-        // check that our image exists
-        if (!imageData) {
-          resp->setBody("Image not found");
-          resp->setContentTypeCode(CT_TEXT_HTML);
-          resp->setStatusCode(k404NotFound);
-          callback(resp);
-        }
+                          // check that our image exists
+                          if (!imageData) {
+                            resp->setBody("Image not found");
+                            resp->setContentTypeCode(CT_TEXT_HTML);
+                            resp->setStatusCode(k404NotFound);
+                            callback(resp);
+                          }
 
-        std::ostringstream oss;
-        oss << imageData.rdbuf();
-        std::string image = oss.str();
+                          std::ostringstream oss;
+                          oss << imageData.rdbuf();
+                          std::string image = oss.str();
 
-        resp->setBody(std::move(image));
-        resp->setContentTypeCode(CT_IMAGE_PNG);
-        resp->setStatusCode(k200OK);
-        callback(resp);
-      });
+                          resp->setBody(std::move(image));
+                          resp->setContentTypeCode(CT_IMAGE_JPG);
+                          resp->setStatusCode(k200OK);
+                          callback(resp);
+                        });
 
   app().registerHandler("/api/search", [&alg_hnsw](const HttpRequestPtr &req,
                                                    Callback &&callback) {
@@ -150,6 +146,8 @@ int main() {
     CURL *curl;
     CURLcode res;
     std::string responseString; // Variable to store the response
+    std::vector<hnswlib::labeltype>
+        similarImages; // vector to store the labels returned from searchKnn
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
@@ -188,21 +186,13 @@ int main() {
           if (data.contains("embedding")) {
             std::vector<float> embedding =
                 data["embedding"].get<std::vector<float>>();
-
             auto result = alg_hnsw->searchKnn(embedding.data(), 5);
 
             // Convert the priority queue to a vector with our labels
-            std::vector<hnswlib::labeltype> similarImages;
             while (!result.empty()) {
               similarImages.push_back(result.top().second);
               result.pop();
             }
-
-            std::cout << "Labels:" << std::endl;
-            for (const auto &label : similarImages) {
-              std::cout << label << std::endl;
-            }
-
           } else {
             std::cerr << "No embedding found" << std::endl;
           }
@@ -213,28 +203,23 @@ int main() {
       curl_easy_cleanup(curl);
       curl_slist_free_all(headers);
     }
-
     curl_global_cleanup();
 
-    // End of user embedding code
-
-    std::string localHost = "http://localhost:9000";
-    std::string imageURL = localHost + "/images/cat.png";
-
-    // TODO: convert prompt to an embedding e
-    // TODO: do similarity search using searchKnn over the index with e
-    // TODO: return top 5 similar results
-    // TODO: convert the embeddings to image id's
-
-    // create json response
+    // Create JSON response
     json response;
     response["prompt"] = prompt.value();
     response["results"] = json::array();
-    json result;
-    result["id"] = 1;
-    result["url"] = imageURL;
-    result["alt"] = "Cat";
-    response["results"].push_back(result);
+    for (size_t i = 0; i < similarImages.size(); i++) {
+      json img;
+      img["id"] = i + 1;
+      std::string label = std::to_string(similarImages[i]);
+      while (label.length() < 4) {
+        label.insert(0, 1, '0');
+      }
+      img["url"] = "http://localhost:9000/images/" + label + ".jpg";
+      img["alt"] = "Image: " + label + ".jpg";
+      response["results"].push_back(img);
+    }
 
     resp->setBody(response.dump());
     resp->setContentTypeCode(CT_APPLICATION_JSON);
