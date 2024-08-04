@@ -19,15 +19,19 @@
 
   <body>
 
+    <!-- the title of distann at the very top of the page -->
     <nav>
       <div class="nav-wrapper">
         <a href="#" class="brand-logo center">distann</a>
       </div>
     </nav>
 
+    <!-- main code  -->
     <div class="container">
       <div class="row" style="margin-top: 30px;"></div>
 
+
+    <!-- the other title above search box -->
       <div class="row center">
         <h5 class="header col s12 light grey-text text-lighten-1">
           retrieve images with similarity search and embedding model
@@ -104,27 +108,27 @@
                 width="100%"
                 src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
             </div>
-            <div class="col s4">
+            <!-- <div class="col s4">
               <img
                 id="result-img-6"
                 class="materialboxed"
                 width="100%"
                 src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
-            </div>
-            <div class="col s4">
+            </div> -->
+            <!-- <div class="col s4">
               <img
                 id="result-img-7"
                 class="materialboxed"
                 width="100%"
                 src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
-            </div>
-            <div class="col s4">
+            </div> -->
+            <!-- <div class="col s4">
               <img
                 id="result-img-8"
                 class="materialboxed"
                 width="100%"
                 src="http://farm8.staticflickr.com/7301/9371864980_04993d270e_z.jpg">
-            </div>
+            </div> -->
           </div>
         </div>
       </div>
@@ -133,16 +137,16 @@
 
   </body>
 
-  <!-- include javascript -->
-  <script
-    src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"
-    integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
-    crossorigin="anonymous"></script>
-  <script type="text/javascript" src="script.js"></script>
+  <!-- include javascript, changed spacing pull all code on 1 line -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js", integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=", crossorigin="anonymous"></script>
+  <script src="script.js", type="text/javascript"></script>
+
+  <!-- added seperate js file HTMLscript.js for code in HTML script tag -->
+  <script src="HTMLscript.js", type="text/javascript"></script>
 
   <!-- main script -->
-  <script>
+  <!-- <script>
 
     function displayResults(results) {
       $("#result-area").hide();
@@ -194,12 +198,14 @@
         alert("prompt cannot be empty");
         return;
       }
-
+      console.log(prompt);
+      
       retrieveImages(prompt);
     }
 
     // event: user press enter after typing prompt
     $('#prompt-input').on('keypress', function(e) {
+      // is 13 the enter key
       if (e.which == 13) {
         handlePrompt();
       }
@@ -209,6 +215,6 @@
     $('#prompt-send-btn').on('click', function(e) {
       handlePrompt();
     })
-  </script>
+  </script> -->
 
 </html>
