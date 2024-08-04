@@ -53,7 +53,7 @@ int main() {
 
   // Create vector to hold data we read from input file
   std::vector<float> currEmbedd(dim);
-  int imageLabel = 1;
+  int imageLabel = 0;
 
   // While there is data to read, go to front of each embedding and read data
   // into vector
