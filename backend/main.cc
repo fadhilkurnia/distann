@@ -1,14 +1,10 @@
 #include "server.h"
-
+//to start backend do: ./backend (port) (mode) (optional:forwarding_Mode) (optional:num_of_requests)
 std::string mode = "backend";  // Default mode
 std::string forwardingMode = "forward_one";  // Default forwarding mechanism
+int num_of_requests = 1;  // Default number of requests per server
 
 int main(int argc, char *argv[]) {
-    if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <port> <mode> [forwarding_mode]" << std::endl;
-        return 1;
-    }
-
     int port = std::stoi(argv[1]);
     mode = argv[2];
 
@@ -16,12 +12,16 @@ int main(int argc, char *argv[]) {
         forwardingMode = argv[3];
     }
 
+    if(argc > 4){
+        num_of_requests = std::stoi(argv[4]);
+    }
+
     app().setLogLevel(trantor::Logger::kDebug);
 
     if (mode == "backend") {
         startBackend(port);
     } else if (mode == "proxy") {
-        startProxy(port);
+        startProxy(port, num_of_requests);
     } else {
         std::cerr << "Invalid mode. Use 'backend' or 'proxy'." << std::endl;
         return 1;
@@ -173,81 +173,114 @@ void startBackend(int port) {
     app().addListener(host, port).run();
 }
 
-void startProxy(int port) {
-    app().registerHandler("/{path}", [](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &path) {
-        handleForwarding(req, std::move(callback), path, forwardingMode);
+void startProxy(int port, int num_of_requests) {
+
+    app().registerHandler("/{path}", [num_of_requests](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &path) {
+        handleForwarding(req, std::move(callback), path, forwardingMode, num_of_requests);
     });
 
-    // Register backend routes
-    // startBackend(10000);
-    // startBackend(11000);
-    // startBackend(12000);
-
     std::string host = "0.0.0.0";
-    LOG_INFO << "Running distann proxy server on " << host << ":" << port;
+    LOG_INFO << "Running distann proxy server on " << host << ":" << port
+             << "\nforwarding mode: " << forwardingMode << " and " << num_of_requests << " requests per server";
 
     app().addListener(host, port).run();
 }
 
-void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &path, const std::string &forwardingMode) {
+void sendSingleRequest(const std::string &url, 
+                       const drogon::HttpRequestPtr &req, 
+                        int reqNum,
+                       std::shared_ptr<std::vector<std::string>> responses, 
+                       std::shared_ptr<int> responsesLeft, 
+                       std::function<void(const drogon::HttpResponsePtr &)> callback, 
+                       std::mutex &mutex) {
+    
+    auto client = HttpClient::newHttpClient(url);
+    auto newReq = HttpRequest::newHttpRequest();
+    newReq->setMethod(req->method());
+    newReq->setPath(req->getPath());
+    newReq->setBody(std::string(req->getBody()));
+
+    // Forward headers
+    for (const auto &header : req->getHeaders()) {
+        newReq->addHeader(header.first, header.second);
+    }
+
+    client->sendRequest(newReq, [url, reqNum, responses, responsesLeft, callback, &mutex](ReqResult result, const HttpResponsePtr &resp) {
+        std::ostringstream oss;
+        if (result == ReqResult::Ok) {
+            LOG_INFO << "Successfully forwarded to " << url << "on request number: " + std::to_string(reqNum);
+            oss << "Response from " << url << ": " << resp->getBody() << "\n";
+        } else {
+            LOG_ERROR << "Failed to forward to " << url;
+            oss << "Failed to connect to backend server: " << url << "\n";
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            responses->push_back(oss.str());
+            (*responsesLeft)--;
+        }
+
+        if (*responsesLeft == 0) {
+            auto aggregatedResponse = HttpResponse::newHttpResponse();
+            std::ostringstream aggregatedBody;
+            for (const auto &res : *responses) {
+                aggregatedBody << res;
+            }
+            aggregatedResponse->setBody(aggregatedBody.str());
+            aggregatedResponse->setStatusCode(k200OK);
+            callback(aggregatedResponse);
+        }
+    });
+}
+
+void sendGetRequestsToServer(const std::string &url, 
+                             const drogon::HttpRequestPtr &req, 
+                             int num_of_requests, 
+                             std::shared_ptr<std::vector<std::string>> responses, 
+                             std::shared_ptr<int> responsesLeft, 
+                             std::function<void(const drogon::HttpResponsePtr &)> callback, 
+                             std::mutex &mutex) {
+    std::vector<std::thread> threads;
+    for (int reqNum = 0; reqNum < num_of_requests; reqNum++) {
+        LOG_INFO << "Thread request number: " << reqNum << " to " << url;
+        threads.emplace_back(std::thread(sendSingleRequest, url, req, reqNum, responses, responsesLeft, callback, std::ref(mutex)));
+    }
+
+    for (auto &thread : threads) {
+        thread.join();
+    }
+}
+
+void handleForwarding(const HttpRequestPtr &req, 
+                      std::function<void(const HttpResponsePtr &)> &&callback, 
+                      const std::string &path, 
+                      const std::string &forwardingMode, 
+                      int num_of_requests) {
     std::vector<std::string> backendUrls = {
         "http://localhost:10000",
         "http://localhost:11000",
         "http://localhost:12000"
     };
 
-    LOG_INFO << "Forwarding request for path: " << path << " with forwarding mode: " << forwardingMode;
-
     if (forwardingMode == "forward_all") {
-        std::shared_ptr<int> responsesLeft(new int(backendUrls.size()));
+        std::shared_ptr<int> responsesLeft(new int(backendUrls.size() * num_of_requests));
         std::shared_ptr<std::vector<std::string>> responses(new std::vector<std::string>());
         std::mutex mutex;
 
+        LOG_INFO << "Mode: " + forwardingMode;
+        std::vector<std::thread> threads;
         for (const auto &url : backendUrls) {
-            LOG_INFO << "Forwarding to " << url;
-            auto client = HttpClient::newHttpClient(url);
-            auto newReq = HttpRequest::newHttpRequest();
-            newReq->setMethod(req->method());
-            newReq->setPath(req->getPath());
-            newReq->setBody(std::string(req->getBody()));
+            LOG_INFO << "Thread Forwarding to " + url;
+            threads.emplace_back(std::thread(sendGetRequestsToServer, url, req, num_of_requests, responses, responsesLeft, callback, std::ref(mutex)));
+        }
 
-            // Forward headers
-            for (const auto &header : req->getHeaders()) {
-                newReq->addHeader(header.first, header.second);
-            }
-
-            client->sendRequest(newReq, [callback, url, responses, responsesLeft, &mutex](ReqResult result, const HttpResponsePtr &resp) {
-                std::ostringstream oss;
-                if (result == ReqResult::Ok) {
-                    LOG_INFO << "Successfully forwarded to " << url;
-                    oss << "Response from " << url << ": " << resp->getBody() << "\n";
-                } else {
-                    LOG_ERROR << "Failed to forward to " << url;
-                    oss << "Failed to connect to backend server: " << url << "\n";
-                }
-
-                {
-                    // Use a scoped lock to ensure thread safety when accessing shared data
-                    std::lock_guard<std::mutex> lock(mutex);
-                    responses->push_back(oss.str());
-                    (*responsesLeft)--;
-                }
-
-                if (*responsesLeft == 0) {
-                    auto aggregatedResponse = HttpResponse::newHttpResponse();
-                    std::ostringstream aggregatedBody;
-                    for (const auto &res : *responses) {
-                        aggregatedBody << res;
-                    }
-                    aggregatedResponse->setBody(aggregatedBody.str());
-                    aggregatedResponse->setStatusCode(k200OK);
-                    callback(aggregatedResponse);
-                }
-            });
+        for (auto &thread : threads) {
+            thread.join();
         }
     } else if (forwardingMode == "forward_one") {
         auto client = HttpClient::newHttpClient(backendUrls[0]);
-        
+
         LOG_INFO << "Forwarding to " << backendUrls[0];
 
         auto newReq = HttpRequest::newHttpRequest();

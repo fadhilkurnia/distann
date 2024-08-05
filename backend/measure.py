@@ -20,12 +20,6 @@ def calculate_cdf(latencies):
     subprocess.Popen('imview plot.png', shell = True)
     return 
     
-# def calculate_latency_increasing_thoughput(time, bytes):
-#     throughput = bytes/time
-#     print(f"Total Time Taken: {time:.2f} seconds")
-#     print(f"Throughput: {throughput / (1024 * 1024):.2f} MBps")
-#     return throughput
-
 def send_requests(ports, serving_appro, num_requests = 1, throughput_levels = [1], duration = 10):
     processes = []
     latencies = {port: [] for port in ports}
