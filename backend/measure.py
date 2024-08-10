@@ -7,43 +7,54 @@ import matplotlib.pyplot as plt
 
 #to start: python3 measure.py --ports (the port number you want to measure) --num_requests (number of requests you want to send) --serving_appro (the serving approach you want to use) --mode (backend or proxy)
 
-def calculate_cdf(latencies): 
-    sotr = np.sort(latencies)
-    cdf = np.linspace(0, 1, len(latencies))
-
-    #plot 
-    plt.xlabel('time') 
-    plt.ylabel('cdf') 
-    plt.title('CDF of response time')
-    plt.plot(sotr, cdf, marker = 'o')
-    plt.savefig('CDF_plot.png')
-    print("image saved!")
-    subprocess.Popen('imview CDF_plot.png', shell = True)
-    return 
+def calculate_cdf(data):
+    plt.figure()
     
-def send_requests(ports, serving_appro, num_requests = 1, throughput_levels = [1]):
-    processes = []
-    latencies = {port: [] for port in ports}
-
-    for port in ports:
+    for port, latencies in data:
+        sotr = np.sort(np.array(latencies))
+        cdf = np.arange(1, len(sotr) + 1) / len(sotr)
         
-        #process = subprocess.Popen(['build/backend', str(port), str(serving_appro)])
+        # Plot CDF
+        plt.plot(sotr, cdf, marker='o', label=f'Port {port}')
+    
+    # Labeling
+    plt.xlabel('Milliseconds')
+    plt.ylabel('CDF')
+    plt.title('CDF of Response Time')
+    plt.legend()
+    
+    # Save and display the plot
+    plt.savefig('CDF_plot.png')
+    print("Image saved!")
+    subprocess.Popen('imview CDF_plot.png', shell=True)
+    
+def send_requests(serving_appro, num_requests = 1, power = 1):
+    processes = []
+    latencies = []
+    server_ports = [10000, 11000, 12000]
+
+    #open the servers
+    for port in server_ports:
+        process = subprocess.Popen([f'./backend {port} backend'], cwd='build', shell=True)
+        processes.append(process)
         time.sleep(1)
-        for _ in range(num_requests):
-            try:
-                start_time = time.time()
-                response = requests.get(f'http://localhost:{port}')
-                end_time = time.time()
-                latency = end_time - start_time
-                latencies[port].append(latency)
 
-                print(f"Port:{port}, Status Code: {response.status_code}, Response Time: {response.elapsed.total_seconds()} seconds")
-            except requests.RequestException as e:
-                print(f"Request failed for port {port}: {e}")
+    #open the flask application
+    try:
+        flask_process = subprocess.Popen(['flask', '--app', 'app', 'run'], cwd='API')
+        processes.append(flask_process)
+        time.sleep(4)
+    except Exception as e:
+        print(f"Failed to start Flask application: {e}")
 
-        calculate_cdf(latencies[port])
-        processes.append(process) 
-
+    #open the proxy server
+    process = subprocess.Popen(['build/backend', str(9000), "proxy", serving_appro, str(num_requests), str(power)])
+    time.sleep(1)
+    response = requests.get(f'http://localhost:9000')
+    latencies = response.json()['latencies']
+    print(latencies)
+    calculate_cdf(latencies)
+    processes.append(process)    
     print("All servers started")   
     return processes
 
@@ -55,40 +66,25 @@ def close_processes(processes):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send multiple requests to a backend")
-    parser.add_argument("--ports", nargs = '+', type = int, required = True, help = "List of ports for the servers")
     parser.add_argument("--num_requests", type=int, default=1, help="Number of requests to send")   
 
     # parser.add_argument("--throughput_levels", nargs='+', type=float, required=True, help="List of throughput levels (requests per second)")
 
     #set serving_appro to to required after implementing the serving approach
-    parser.add_argument("--serving_appro", type=int, default=0, help="Serving approach")
-    parser.add_argument("--mode", type=str, default="backend", help="Mode to run the server")
+    parser.add_argument("--serving_appro", type=str, default=0, help="Serving approach")
+    parser.add_argument("--power", type=int, default=1, help="Power of the server")
+    parser.add_argument("--prompt", type=str, default=False, help="Prompt user for input")
 
     args = parser.parse_args()
     
-    if(args.mode == "backend"):
-        #backend mode
-        print("Running in backend mode")
-        try:
-            processes = send_requests(args.ports, args.serving_appro, args.num_requests)
-            print("Press Ctrl+C to stop the servers")
-            while True:
-                time.sleep(1)
+    print("Running...")
+    try:
+        processes = send_requests(args.serving_appro, args.num_requests, args.power)
+        print("Press Ctrl+C to stop the servers")
+        while True:
+            time.sleep(1)
 
-        except KeyboardInterrupt:
-            print("Stopping servers...")
-            close_processes(processes)
-            print("All servers stopped.")
-    else:
-        #proxy mode
-        print("Running in proxy mode")
-        try:
-            processes = send_requests(args.ports, args.serving_appro, args.num_requests)
-            print("Press Ctrl+C to stop the servers")
-            while True:
-                time.sleep(1)
-
-        except KeyboardInterrupt:
-            print("Stopping servers...")
-            close_processes(processes)
-            print("All servers stopped.")
+    except KeyboardInterrupt:
+        print("Stopping servers...")
+        close_processes(processes)
+        print("All servers stopped.")

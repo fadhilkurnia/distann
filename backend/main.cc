@@ -1,19 +1,57 @@
-#include <drogon/drogon.h>
-#include <fstream>
-// #include <hnswlib/hnswlib.h>
-#include "libs/hnswlib/hnswlib.h"
-#include <iostream>
-#include <nlohmann/json.hpp>
-#include <string>
-#include <vector>
-
-// headers for the user embedding
-#include <curl/curl.h>
-#include <iostream>
-#include <stdio.h>
+#include "server.h"
 
 using json = nlohmann::json;
 using namespace drogon;
+
+#include "server.h"
+//to start backend do: ./backend (port) (mode) (optional:forwarding_Mode) (optional:num_of_requests)
+std::string mode = "backend";  // Default mode
+std::string forwardingMode = "forward_random";  // Default forwarding mechanism
+int num_of_requests = 1;  // Default number of requests per server
+std::vector<std::pair<int, std::vector<double>>> port_latencies;
+int num_of_total_requests = 0;
+int power = 1; // Default number of servers to forward to
+int request_left = 0; // Number of requests left to be processed
+std::atomic<int> currentBackendIndex(0); // Global variable to keep track of the current backend index
+std::string prompt = ""; 
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[1] << " <port> <mode> <forwarding_mode> <num_of_requests> <power> <prompt>\n";
+        return 1;
+    }
+
+    int port = std::stoi(argv[1]);
+    mode = argv[2];
+
+    if (argc > 3) {
+        forwardingMode = argv[3];
+    }
+
+    if(argc > 4){
+        num_of_requests = std::stoi(argv[4]);
+    }
+
+    if(argc > 5){
+        power = std::stoi(argv[5]);
+    }
+
+    if(argc > 6){
+        prompt = argv[6];
+    }
+
+    app().setLogLevel(trantor::Logger::kDebug);
+
+    if (mode == "backend") {
+        startBackend(port);
+    } else if (mode == "proxy") {
+        startProxy(port, num_of_requests);
+    } else {
+        std::cerr << "Invalid mode. Use 'backend' or 'proxy'." << std::endl;
+        return 1;
+    }
+    return 0;
+}
 
 // Callback function to write response data into a string, for user embedding
 size_t WriteCallback(void *contents, size_t size, size_t nmemb,
@@ -23,14 +61,13 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   return totalSize;
 }
 
-int main() {
-
-  // Open file with our embedded image vectors
+void startBackend(int port){
+      // Open file with our embedded image vectors
   const char *embeddingsFile = "../imageEmbeddings.txt";
   std::ifstream in(embeddingsFile, std::ios::binary);
   if (!in) {
     std::cerr << "Error opening file" << std::endl;
-    return 1;
+    return;
   }
 
   // Read the dimension of the embeddings
@@ -38,7 +75,7 @@ int main() {
   in.read(reinterpret_cast<char *>(&dim), sizeof(int));
   if (!in) {
     std::cerr << "Error reading dimension" << std::endl;
-    return 1;
+    return;
   }
 
   // Params for HNSW alg
@@ -62,7 +99,7 @@ int main() {
                  dim * sizeof(float))) {
     if (!in) {
       std::cerr << "Error reading embedding values" << std::endl;
-      return 1;
+      return;
     }
 
     // Add vector to index
@@ -231,9 +268,193 @@ int main() {
 
   // run the backend server in the specified host/interface and port.
   std::string host = "0.0.0.0";
-  int port = 9000;
   LOG_INFO << "Running distann backend server on " << host << ":" << port;
   app().addListener(host, port).run();
+}
 
-  return 0;
+
+void startProxy(int port, int num_of_requests) {
+    app().registerHandler("/{path}", [num_of_requests](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback, const std::string &path) {
+        handleForwarding(req, std::move(callback), path, forwardingMode, num_of_requests);
+
+        //loop until all requests are done
+        while(request_left > -1){
+            if(request_left == 0){
+                json json_latencies;
+                json_latencies["latencies"] = port_latencies;
+                auto resp = HttpResponse::newHttpResponse();
+                resp->setBody(json_latencies.dump());
+                resp->setContentTypeCode(CT_APPLICATION_JSON);
+                resp->setStatusCode(k200OK);
+                callback(resp);
+                printLatencies();
+                fastestResp();
+                break;
+            } 
+            LOG_INFO << "Requests left: " << request_left << "\n";
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    });
+
+    std::string host = "0.0.0.0";
+    LOG_INFO << "Running distann proxy server on " << host << ":" << port
+             << "\nforwarding mode: " << forwardingMode << " and " << num_of_requests << " requests\n";
+
+    app().addListener(host, port).run();
+}
+
+void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &req, int reqNum,
+                       std::function<void(const HttpResponsePtr &)> callback,
+                       std::mutex &mutex) {
+    auto client = HttpClient::newHttpClient(url);
+    auto newReq = HttpRequest::newHttpRequest();
+    newReq->setMethod(drogon::HttpMethod::Get);
+    newReq->addHeader("Accept", "application/json");
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    client->sendRequest(newReq, [url, port, reqNum, callback, start, &mutex](ReqResult result, const HttpResponsePtr &resp) {
+        auto end = std::chrono::high_resolution_clock::now();
+        double latency = std::chrono::duration<double, std::milli>(end - start).count();
+        num_of_total_requests++;
+        std::ostringstream oss;
+        if (result == ReqResult::Ok) {
+            LOG_INFO << "Successfully forwarded to " << url << " on request number: " + std::to_string(reqNum) << "\n";
+
+            std::string contentType = resp->getHeader("Content-Type");
+            LOG_INFO << "Content-Type: " << contentType;
+
+            std::string responseBody(resp->getBody().data(), resp->getBody().size());
+            LOG_INFO << "Response from " << url << ": " << responseBody;
+
+            oss << "Response from " << url << ": " << resp->getBody() << "\n";
+        } else {
+            LOG_INFO << "Failed to forward to " << url << "\n";
+            oss << "Failed to connect to backend server: " << url << "\n";
+        }
+
+        std::lock_guard<std::mutex> lock(mutex);
+
+        // Add latency to port_latencies
+        auto it = std::find_if(port_latencies.begin(), port_latencies.end(),
+                                [port](const std::pair<int, std::vector<double>> &p) { return p.first == port; });
+        if (it != port_latencies.end()) {
+            it->second.push_back(latency);
+        } else {
+            port_latencies.push_back(std::make_pair(port, std::vector<double>{latency}));
+        }
+
+        request_left--;
+        LOG_INFO << "Request left in thread: " << request_left;
+    });
+}
+
+void sendGetRequestsToServer(const std::string &url, int port, const HttpRequestPtr &req, int num_of_requests,
+                            std::function<void(const HttpResponsePtr &)> callback,
+                             std::mutex &mutex) {
+    std::vector<std::thread> threads;
+    for (int reqNum = 0; reqNum < num_of_requests; reqNum++) {
+        LOG_INFO << "Thread request number: " << reqNum << " to " << url;
+        threads.emplace_back(std::thread(sendSingleRequest, url, port, req, reqNum, callback, std::ref(mutex)));
+    }
+
+    for (auto &thread : threads) {
+        thread.join();
+    }
+}
+
+void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
+                      const std::string &path, const std::string &forwardingMode, int num_of_requests) {
+    std::vector<std::pair<std::string, int>> backendUrls = {
+        {"http://localhost:10000", 10000},
+        {"http://localhost:11000", 11000},
+        {"http://localhost:12000", 12000}
+    };
+
+    //append /api/search?prompt= to each backend url
+        for (auto &url : backendUrls) {
+            url.first += "/api/search?prompt=" + prompt;
+        }
+
+    std::mutex mutex;
+
+    if (forwardingMode == "forward_all") {
+        LOG_INFO << "Forwarding All" << "\n";
+        for (const auto &url : backendUrls) {
+            LOG_INFO << "Thread Forwarding to " + url.first;
+            request_left += num_of_requests;
+            std::thread(sendGetRequestsToServer, url.first, url.second, req, num_of_requests, callback, std::ref(mutex)).detach();
+        }
+    } else if (forwardingMode == "forward_round") {
+        // Round-robin fashion
+        LOG_INFO << "Forwardning Round Robin";
+        request_left += num_of_requests;
+        for (int i = 0; i < num_of_requests; ++i) {
+            int backendCount = backendUrls.size();
+            int currentIndex = currentBackendIndex.fetch_add(1) % backendCount;
+            auto& selectedBackend = backendUrls[currentIndex];
+            LOG_INFO << "Forwarding to " << selectedBackend.first << " in round-robin fashion";
+            LOG_INFO << "request number: " << i << " to " << selectedBackend.first;
+            // Call the function to send the request to the server sequentially
+            sendSingleRequest(selectedBackend.first, selectedBackend.second, req, i, callback, mutex);
+        }
+    } else if (forwardingMode == "forward_random") {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, backendUrls.size() - 1);
+        int randomIndex = dis(gen);
+        LOG_INFO << "Forwarding Random" << "\n";
+        request_left += num_of_requests;
+        LOG_INFO << "Forwarding to " << backendUrls[randomIndex].first << "\n";
+
+        std::thread(sendGetRequestsToServer, backendUrls[randomIndex].first, backendUrls[randomIndex].second, req, num_of_requests, callback, std::ref(mutex)).detach();
+    } else if (forwardingMode == "forward_fastest"){
+        LOG_INFO << "Forwarding Power to " << power << " servers"<< "\n";
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::shuffle(backendUrls.begin(), backendUrls.end(), gen);
+        
+        for(int i = 0; i < power; i++){
+            request_left += num_of_requests;
+            LOG_INFO << "Forwarding to " << backendUrls[i].first << "\n";
+            std::thread(sendGetRequestsToServer, backendUrls[i].first, backendUrls[i].second, req, num_of_requests, callback, std::ref(mutex)).detach();
+        }
+
+    }
+}
+
+
+void printLatencies() {
+    for (const auto &port_latency : port_latencies) {
+        std::cout << "Port: " << port_latency.first << std::endl;
+        int count = 0;
+        for (const auto &latency : port_latency.second) {
+            count++;
+            std::cout << latency << ", ";
+        }
+        std::cout << "\nnum of latency: "<< count << std::endl;
+    }
+    std::cout << "Total number of requests: " << num_of_total_requests << std::endl;
+}
+
+int fastestResp(){
+    double fastest_time = std::numeric_limits<double>::max();
+    int fastest_port = -1;
+
+    // Iterate over each pair in the vector
+    for (const auto& port_latency_pair : port_latencies) {
+        int port = port_latency_pair.first;
+        const std::vector<double>& latencies = port_latency_pair.second;
+
+        auto min_latency_it = std::min_element(latencies.begin(), latencies.end());
+        double min_latency = *min_latency_it;
+
+        if (min_latency < fastest_time) {
+            fastest_time = min_latency;
+            fastest_port = port;
+        }
+    }
+
+    std::cout << "The fastest response time is " << fastest_time << " ms on port " << fastest_port << "." << std::endl;
+    return fastest_port;
 }
