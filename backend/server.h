@@ -9,6 +9,19 @@
 #include <iostream>
 #include <unistd.h>
 #include <thread>
+#include <atomic>
+#include <chrono>
+#include <vector>
+#include <sstream>
+#include <map>
+#include <algorithm>
+#include <random>
+#include <mutex>
+#include <json/json.h>
+#include <limits>
+
+
+
 
 using namespace hnswlib;
 using json = nlohmann::json;
@@ -18,25 +31,19 @@ using namespace drogon;
 void startBackend(int port);
 void startProxy(int port, int numRequests);
 
-void sendSingleRequest(const std::string &url, 
-                       const drogon::HttpRequestPtr &req, 
-                        int reqNum,
-                       std::shared_ptr<std::vector<std::string>> responses, 
-                       std::shared_ptr<int> responsesLeft, 
-                       std::function<void(const drogon::HttpResponsePtr &)> callback, 
+void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &req, int reqNum,
+                       std::function<void(const HttpResponsePtr &)> callback,
                        std::mutex &mutex);
-
-void sendGetRequestsToServer(const std::string &url, 
-                             const drogon::HttpRequestPtr &req, 
-                             int num_of_requests, 
-                             std::shared_ptr<std::vector<std::string>> responses, 
-                             std::shared_ptr<int> responsesLeft, 
-                             std::function<void(const drogon::HttpResponsePtr &)> callback, 
+                       
+void sendGetRequestsToServer(const std::string &url, int port, const HttpRequestPtr &req, int num_of_requests,
+                             std::function<void(const HttpResponsePtr &)> callback,
                              std::mutex &mutex);
+void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
+                      const std::string &path, const std::string &forwardingMode, int num_of_requests);
 
-void handleForwarding(const HttpRequestPtr &req, 
-                      std::function<void(const HttpResponsePtr &)> &&callback, 
-                      const std::string &path, 
-                      const std::string &forwardingMode, 
-                      int num_of_requests);
+void calculateCDF(const std::vector<double>& latencies, Json::Value& cdfJson);
+
+void printLatencies();
+int fastestResp();
+
 #endif // SERVER_H
