@@ -74,13 +74,13 @@ def measure_load_vs_latency(serving_appro, load_levels, power=1, prompt=""):
     
         time.sleep(2)  # Give some time for the requests to be processed
 
-        print(f"Latencies: {data}")
+        # print(f"Latencies: {data}")
         
         flattened_data = [item for sublist in data for item in sublist]
-        print(f"Flattened data: {flattened_data}")
+        # print(f"Flattened data: {flattened_data}")
         latencies_by_load.append((load, flattened_data))
         
-        print(f"Latencies by load: {latencies_by_load}")
+        # print(f"Latencies by load: {latencies_by_load}")
     
         
         #make sure all the processes are closed
