@@ -3,8 +3,6 @@
     std::string mode = "backend";  // Default mode
     std::string forwardingMode = "forward_random";  // Default forwarding mechanism
     int num_of_requests = 1;  // Default number of requests per server
-
-    int num_of_total_requests = 0;
     int power = 1; // Default number of servers to forward to for fastest n number of servers
     std::string promptType = "word"; // Default prompt type
 
@@ -56,6 +54,57 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   s->append(static_cast<char *>(contents), totalSize);
   return totalSize;
 }
+
+//thread pool 
+
+class ThreadPool {
+public:
+    ThreadPool(size_t numThreads) {
+        for (size_t i = 0; i < numThreads; ++i) {
+            workers.emplace_back([this]() {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(queueMutex);
+                        condition.wait(lock, [this]() { return !tasks.empty() || stop; });
+                        if (stop && tasks.empty()) return;
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    template<class F>
+    void enqueue(F&& f) {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            if (stop) throw std::runtime_error("enqueue on stopped ThreadPool");
+            tasks.emplace(std::forward<F>(f));
+        }
+        condition.notify_one();
+    }
+
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            stop = true;
+        }
+        condition.notify_all();
+        for (std::thread &worker : workers) {
+            worker.join();
+        }
+    }
+
+private:
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    bool stop = false;
+};
 
 void startBackend(int port){
       // Open file with our embedded image vectors
@@ -308,6 +357,7 @@ void startProxy(int port, int num_of_requests) {
     };
 
     int request_left = 0; // Number of requests left to be processed
+    int num_of_total_requests = 0; // Total number of requests processed
 
     for(int i = 0; i < backendUrls.size(); i++){
         if(promptType == "word"){
@@ -319,7 +369,7 @@ void startProxy(int port, int num_of_requests) {
         }
     }
 
-    app().registerHandler("/", [&num_of_requests, &port_latencies, &backendUrls, &request_left](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) mutable {
+    app().registerHandler("/", [&num_of_requests, &port_latencies, &backendUrls, &request_left, &num_of_total_requests](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) mutable {
         
         //try not to use global function 
         //define counter in lambda function
@@ -331,7 +381,7 @@ void startProxy(int port, int num_of_requests) {
         //3. get the fastest response time and return it to the user
         //concurrent vector / hashmap 
              
-        handleForwarding(req, std::move(callback), forwardingMode, num_of_requests, port_latencies, backendUrls, request_left);
+        handleForwarding(req, std::move(callback), forwardingMode, num_of_requests, port_latencies, backendUrls, request_left, num_of_total_requests);
 
         // loop until all requests are done
         while(request_left > -1){
@@ -364,9 +414,7 @@ void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &r
                        std::function<void(const HttpResponsePtr &)> callback,
                        std::mutex &mutex,
                        std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-                       int &request_left) {
-
-    std::unique_lock<std::mutex> lock(mutex);
+                       int &request_left, int &num_of_total_requests) {
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -380,51 +428,45 @@ void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &r
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
 
+
+
         res = curl_easy_perform(curl);
 
         auto end = std::chrono::high_resolution_clock::now();
         double latency = std::chrono::duration<double, std::milli>(end - start).count();
-        num_of_total_requests++;
 
+        
         if (res != CURLE_OK) {
             std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
         } else {
             LOG_INFO << "Success response from " << url;
+            num_of_total_requests++;
         }
 
-        curl_easy_cleanup(curl);
+        std::unique_lock<std::mutex> lock(mutex);
 
         addLatency(port_latencies, port, latency);
-
-
         request_left--;
         LOG_INFO << "Request left in thread: " << request_left;
+        
+        curl_easy_cleanup(curl);
     } else {
         std::cerr << "Failed to initialize curl" << std::endl;
     }
-    lock.unlock();
 }
 
 void sendGetRequestsToServer(const std::string &url, int port, const HttpRequestPtr &req, int num_of_requests,
                             std::function<void(const HttpResponsePtr &)> callback,
-                             std::mutex &mutex, std::vector<std::pair<int, 
-                             std::vector<double>>> &port_latencies, int &request_left) {
-    // locking this part will get the program stuck
-    // LOG_INFO << "locking mutex";
-    // // std::unique_lock<std::mutex> lock(mutex);
-    std::vector<std::thread> threads;
-    
-    for (int reqNum = 0; reqNum < num_of_requests; reqNum++) {
-    threads.emplace_back([&, url, port]() {
-            sendSingleRequest(url, port, req, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left));
+                            std::mutex &mutex, std::vector<std::pair<int, std::vector<double>>> &port_latencies,
+                            int &request_left, int &num_of_total_requests) {
+
+    ThreadPool pool(50); // Use a thread pool with # of worker threads
+
+    for (int reqNum = 0; reqNum < num_of_requests; ++reqNum) {
+        pool.enqueue([&, url, port]() {
+            sendSingleRequest(url, port, req, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left), std::ref(num_of_total_requests));
         });
     }
-
-    for (auto &thread : threads) {
-        thread.join();
-    }
-    // LOG_INFO << "unlocking mutex";
-    // // lock.unlock();
 }
 
 void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
@@ -432,7 +474,7 @@ void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpRe
                       int num_of_requests, 
                       std::vector<std::pair<int, std::vector<double>>> &port_latencies,
                       std::vector<std::pair<std::string, int>> &backendUrls,
-                      int &request_left) {
+                      int &request_left, int &num_of_total_requests) {
 
     std::atomic<int> currentBackendIndex(0); // variable to keep track of the current backend index for round-robin forwarding
     std::mutex mutex;
@@ -442,7 +484,7 @@ void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpRe
         LOG_INFO << "Forwarding All" << "\n";
         for (const auto &url : backendUrls) {
             request_left += num_of_requests;
-            threads.emplace_back(sendGetRequestsToServer, url.first, url.second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left));
+            threads.emplace_back(sendGetRequestsToServer, url.first, url.second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left), std::ref(num_of_total_requests));
         }
 
     } else if (forwardingMode == "forward_round") {
@@ -452,7 +494,7 @@ void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpRe
             int backendCount = backendUrls.size();
             int currentIndex = currentBackendIndex.fetch_add(1) % backendCount;
             auto& selectedBackend = backendUrls[currentIndex];
-            sendSingleRequest(selectedBackend.first, selectedBackend.second, req, callback, mutex, port_latencies, request_left);
+            sendSingleRequest(selectedBackend.first, selectedBackend.second, req, callback, mutex, port_latencies, request_left, num_of_total_requests);
         }
 
     } else if (forwardingMode == "forward_random") {
@@ -461,13 +503,13 @@ void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpRe
         std::uniform_int_distribution<> dis(0, backendUrls.size() - 1);
         int randomIndex = dis(gen);
         request_left += num_of_requests;
-        threads.emplace_back(sendGetRequestsToServer, backendUrls[randomIndex].first, backendUrls[randomIndex].second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left));
+        threads.emplace_back(sendGetRequestsToServer, backendUrls[randomIndex].first, backendUrls[randomIndex].second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left), std::ref(num_of_total_requests));
     
     } else if (forwardingMode == "forward_fastest") {
         LOG_INFO << "Forwarding Power to " << power << " servers" << "\n";
         for (int i = 0; i < power; i++) {
             request_left += num_of_requests;
-            threads.emplace_back(sendGetRequestsToServer, backendUrls[i].first, backendUrls[i].second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left));
+            threads.emplace_back(sendGetRequestsToServer, backendUrls[i].first, backendUrls[i].second, req, num_of_requests, callback, std::ref(mutex), std::ref(port_latencies), std::ref(request_left), std::ref(num_of_total_requests));
         }
     }
 
@@ -477,18 +519,18 @@ void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpRe
 }
 
 
-void printLatencies(std::vector<std::pair<int, std::vector<double>>> port_latencies) {
-    for (const auto &port_latency : port_latencies) {
-        std::cout << "Port: " << port_latency.first << std::endl;
-        int count = 0;
-        for (const auto &latency : port_latency.second) {
-            count++;
-            std::cout << latency << ", ";
-        }
-        std::cout << "\nnum of latency: "<< count << std::endl;
-    }
-    std::cout << "Total number of requests: " << num_of_total_requests << std::endl;
-}
+// void printLatencies(std::vector<std::pair<int, std::vector<double>>> port_latencies, ) {
+//     for (const auto &port_latency : port_latencies) {
+//         std::cout << "Port: " << port_latency.first << std::endl;
+//         int count = 0;
+//         for (const auto &latency : port_latency.second) {
+//             count++;
+//             std::cout << latency << ", ";
+//         }
+//         std::cout << "\nnum of latency: "<< count << std::endl;
+//     }
+//     std::cout << "Total number of requests: " << num_of_total_requests << std::endl;
+// }
 
 std::pair<int, double> fastestResp(const std::vector<std::pair<int, std::vector<double>>> &port_latencies) {
     std::pair<int, double> fastest_port = {-1, -1};
@@ -518,4 +560,5 @@ void addLatency(std::vector<std::pair<int, std::vector<double>>>& port_latencies
     }
     std::cerr << "Port " << port << " not found.\n";
 }
+
 
