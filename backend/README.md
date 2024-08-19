@@ -21,7 +21,11 @@ backend/
 ```
 
 ## Getting the dependencies
-TBD
+Required external dependencies:
+```
+- drogon
+- curl
+```
 
 ## Preparing the embeddings dataset
 TBD
