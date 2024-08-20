@@ -10,10 +10,13 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import socket
 
+# from test import start
 #to start: python3 measure.py --ports (the port number you want to measure) --num_requests (number of requests you want to send) --serving_appro (the serving approach you want to use) --mode (backend or proxy)
 
 
 #send the latency of the proxy 
+
+g_data = []
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -34,33 +37,16 @@ def kill_process_by_port(port):
     print(f"No process found using port {port}")
 
 def close_all_processes():
-    server_ports = [5000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+    server_ports = [9000, 10000, 11000, 12000, 13000, 14000, 15000, 5000]
     for port in server_ports:
         kill_process_by_port(port)
     print("All processes terminated")
 
 def calculate_cdf(serving_appro, num_requests = 1, power = 1, prompt = ""):
 
-    processes = start_serv()
+    start_serv()
 
-    if is_port_in_use(9000):
-        kill_process_by_port(9000)
-        print(f"Killed processes on port 9000")
-    else:
-        print(f"No processes found on port port_to_kill")
-
-    proxy_process = subprocess.Popen([f'./backend 9000 proxy {serving_appro} {num_requests} {power} {prompt}'], cwd='build', shell=True)
-    time.sleep(num_requests/100) # Wait for the requests to be processed
-
-    # Fetch latencies
-    try:
-        response = requests.get(f'http://localhost:9000')
-        data = response.json().get('latencies', [])
-        print("Total request: " + str(response.json().get('total_requests')))
-
-    except Exception as e:
-        close_all_processes()
-        print(f"Failed to get latencies: {e}")
+    data = strat_prox(serving_appro, num_requests, power, prompt)
 
     plt.figure()
     
@@ -88,36 +74,17 @@ def calculate_cdf(serving_appro, num_requests = 1, power = 1, prompt = ""):
     plt.savefig('CDF_plot.png')
     print("Image saved!")
     subprocess.Popen('imview CDF_plot.png', shell=True)
-    close_all_processes()    
-
+    close_all_processes()
+    
 def measure_load_vs_latency(serving_appro, load_levels, power=1, prompt=""):
     latencies_by_load = []
-    processes = start_serv()    
+    start_serv()    
     
     for load in load_levels:
         print(f"Testing load level: {load}")
 
         # Open the proxy server
-        if is_port_in_use(9000):
-            kill_process_by_port(9000)
-            print(f"Killed processes on port 9000")
-        else:
-            print(f"No processes found on port port_to_kill")
-
-        proxy_process = subprocess.Popen([f'./backend 9000 proxy {serving_appro} {load} {power} {prompt}'], cwd='build', shell=True)
-        time.sleep(load/10) # Wait for the requests to be processed
-
-        # Fetch latencies
-        try:
-            response = requests.get(f'http://localhost:9000')
-            
-            data = response.json().get('latencies', [])
-            
-        except Exception as e:
-            close_all_processes()
-            print(f"Failed to get latencies: {e}")
-    
-
+        data = strat_prox(serving_appro, load, power, prompt)
         # print(f"Latencies: {data}")
         
         flattened_data = [item for sublist in data for item in sublist]
@@ -128,9 +95,8 @@ def measure_load_vs_latency(serving_appro, load_levels, power=1, prompt=""):
     
         
         #make sure all the processes are closed
-        print(f"Closing all servers in load {load}")
+        print(f"Closing proxy in load {load}")
         kill_process_by_port(9000)
-    close_all_processes()
 
     # Initialize the plot
     plt.figure()
@@ -171,10 +137,10 @@ def measure_load_vs_latency(serving_appro, load_levels, power=1, prompt=""):
     plt.savefig('Load_vs_Latency.png')
     print("Image saved!")
     subprocess.Popen('imview Load_vs_Latency.png', shell=True)
-
+    close_all_processes()
+    
 
 def start_serv():
-    processes = []
     server_ports = [10000, 11000, 12000, 13000, 14000, 15000]
 
     # Open the backend servers
@@ -184,16 +150,14 @@ def start_serv():
             continue
         
         try:
-            process = subprocess.Popen([f'./backend {port} backend'], cwd='build', shell=True)
-            processes.append(process)
+            subprocess.Popen([f'./backend {port} backend'], cwd='build', shell=True)
             time.sleep(0.5)
         except Exception as e:
             print(f"Failed to start server on port {port}: {e}")
 
     # Open the Flask application
     try:
-        flask_process = subprocess.Popen(['flask', '--app', 'app', 'run'], cwd='API')
-        processes.append(flask_process)
+        subprocess.Popen(['flask', '--app', 'app', 'run'], cwd='API')
         time.sleep(4)
     except Exception as e:
         close_all_processes()
@@ -201,7 +165,21 @@ def start_serv():
 
     print("All servers started")
     
-    return processes
+
+def strat_prox(serving_appro, num_requests = 1, power = 1, prompt = ""):
+
+    subprocess.Popen([f'./backend 9000 proxy {serving_appro} {num_requests} {power} {prompt}'], cwd='build', shell=True)
+    time.sleep(2) # Wait for the requests to be processed
+    try:
+        response = requests.get("http://localhost:9000")
+
+        data = response.json().get('latencies', [])
+        print(f"Latencies: {data}")
+        print("Total request: " + str(response.json().get('total_requests')))
+        return data
+    except Exception as e:
+        close_all_processes()
+        print(f"Failed to get latencies: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send multiple requests to a backend")

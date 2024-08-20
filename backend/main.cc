@@ -369,7 +369,35 @@ void startProxy(int port, int num_of_requests) {
         }
     }
 
-    app().registerHandler("/", [&num_of_requests, &port_latencies, &backendUrls, &request_left, &num_of_total_requests](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) mutable {
+//test
+    std::vector<double> testLat = {}; 
+    // for(int i = 0; i < 100; i++){
+    // CURL* curl1;
+    // CURLcode res;
+    // std::string readBuffer;
+    // LOG_INFO << "Sending request to " << backendUrls[0].first;
+    // curl1 = curl_easy_init();
+    // if (curl1) {
+    //     curl_easy_setopt(curl1, CURLOPT_URL, backendUrls[0].first.c_str());
+    //     curl_easy_setopt(curl1, CURLOPT_WRITEFUNCTION, WriteCallback);
+    //     curl_easy_setopt(curl1, CURLOPT_WRITEDATA, &readBuffer);
+
+    //     //where the http request is sent
+    //     auto start = std::chrono::high_resolution_clock::now();
+    //     res = curl_easy_perform(curl1);
+    //     auto end = std::chrono::high_resolution_clock::now();
+
+    //     double latency1 = std::chrono::duration<double, std::milli>(end - start).count();
+
+    //     LOG_INFO << "Total latency: " << latency1 << " ms";
+    //     curl_easy_cleanup(curl1);
+    //     testLat.push_back(latency1); 
+    // }
+    // }
+//test
+
+
+    app().registerHandler("/", [&testLat, &num_of_requests, &port_latencies, &backendUrls, &request_left, &num_of_total_requests](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) mutable {
         
         //try not to use global function 
         //define counter in lambda function
@@ -390,6 +418,7 @@ void startProxy(int port, int num_of_requests) {
                 json_latencies["total_requests"] = num_of_total_requests;
                 json_latencies["fastest_response"] = fastestResp(port_latencies);   
                 json_latencies["latencies"] = port_latencies;
+                json_latencies["test"] = testLat;
                 auto resp = HttpResponse::newHttpResponse();
                 resp->setBody(json_latencies.dump());
                 resp->setContentTypeCode(CT_APPLICATION_JSON);
@@ -416,7 +445,6 @@ void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &r
                        std::vector<std::pair<int, std::vector<double>>> &port_latencies,
                        int &request_left, int &num_of_total_requests) {
 
-    auto start = std::chrono::high_resolution_clock::now();
 
     CURL* curl;
     CURLcode res;
@@ -428,18 +456,16 @@ void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &r
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
 
-
-
+        //where the http request is sent
+        auto start = std::chrono::high_resolution_clock::now();
         res = curl_easy_perform(curl);
-
         auto end = std::chrono::high_resolution_clock::now();
-        double latency = std::chrono::duration<double, std::milli>(end - start).count();
 
+        double latency = std::chrono::duration<double, std::milli>(end - start).count();
         
         if (res != CURLE_OK) {
             std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
         } else {
-            LOG_INFO << "Success response from " << url;
             num_of_total_requests++;
         }
 
@@ -454,6 +480,7 @@ void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &r
         std::cerr << "Failed to initialize curl" << std::endl;
     }
 }
+
 
 void sendGetRequestsToServer(const std::string &url, int port, const HttpRequestPtr &req, int num_of_requests,
                             std::function<void(const HttpResponsePtr &)> callback,
