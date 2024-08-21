@@ -11,7 +11,8 @@
 #include <mutex>
 
 // A dummy process that "sending" request to a backend server.
-void sendRequest(std::atomic<bool>& is_request_done,
+void sendRequest(const std::string& client_request,
+                 std::atomic<bool>& is_request_done,
                  std::mutex& response_lock,
                  std::optional<std::string>& first_response) {
     std::thread::id thread_id = std::this_thread::get_id();
@@ -19,11 +20,11 @@ void sendRequest(std::atomic<bool>& is_request_done,
     // Does dummy processing by sleeping, mimicking sending and receiving
     // response from backend.
     std::cout << "thread-" << thread_id 
-        << ": curl forwarding a request ....\n";
+        << ": curl forwarding request: '" << client_request <<"' ....\n";
     std::this_thread::sleep_for(
         std::chrono::milliseconds(2 + std::rand()%5));
     std::cout << "thread-" << thread_id 
-        << ": curl receiving a response\n";
+        << ": curl receiving a response.\n";
     std::stringstream ss; ss << thread_id;
     std::string response = "a response from " + ss.str();
 
@@ -47,6 +48,9 @@ void sendRequest(std::atomic<bool>& is_request_done,
 
 int main() {
     std::cout << "Prototype for forward_all" << std::endl;
+
+    // Assume we are receiving an http request, with callback.
+    std::string client_request = "a request";
     
     // Prepare important variables for synhronization and storing
     // the first response.
@@ -61,6 +65,7 @@ int main() {
     auto start_time = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < num_backends; ++i) {
         threads.push_back(std::thread(sendRequest,
+                                      std::ref(client_request),
                                       std::ref(is_first_request_done),
                                       std::ref(response_lock),
                                       std::ref(first_response)));
@@ -79,6 +84,10 @@ int main() {
     copy_response = first_response.value();
     response_lock.unlock();
     
+    // In the actual implementation, we need to forward `copy_response` to the
+    // client using callback that is provided when receiving an HTTP request.
+    //   `callback(copy_response)`
+    // Here, we simply print out the response.
     std::cout << "Get the first response in " << duration.count() 
               << "ns. Response: '" << copy_response << "'" << std::endl;
     
