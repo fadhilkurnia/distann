@@ -61,7 +61,7 @@ def calculate_cdf(num_requests = 1, prompt = ""):
         for _ in range(num_requests):
             # Call start_serv and store the result in the corresponding list
             data[serving_approach] = send_request()
-            time.sleep(0.3) # Wait for the requests to be processed
+            time.sleep(0.01) # Wait for the requests to be processed
         kill_process_by_port(9000)
 
     # Plot for all serving approaches except 'forward_all'
@@ -141,7 +141,6 @@ def measure_load_vs_latency(load_levels, prompt=""):
                 thread = threading.Thread(target=send_request)
                 thread.start()
                 threads.append(thread)
-                time.sleep(0.3)
 
             # Wait for all threads to complete
             for thread in threads:
@@ -238,7 +237,6 @@ def send_request():
         response = requests.get("http://localhost:9000")
 
         data = response.json().get('Latency', [])
-        print(f"Latencies: {data}")
         return data
     except Exception as e:
         close_all_processes()
