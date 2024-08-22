@@ -12,6 +12,7 @@
 #include <mutex>
 #include <json/json.h>
 #include <limits>
+#include <optional>
 
 #include <drogon/drogon.h>
 #include <fstream>
@@ -36,33 +37,25 @@ using namespace drogon;
 
 
 void startBackend(int port);
-void startProxy(int port, int numRequests);
+void startProxy(int port);
 
 size_t WriteCallback(void *contents, size_t size, size_t nmemb,
                      std::string *s);
 
-void sendSingleRequest(const std::string &url, int port, const HttpRequestPtr &req,
-                       std::function<void(const HttpResponsePtr &)> callback,
+void sendSingleRequest(const std::string &url,
                        std::mutex &mutex,
-                       std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-                       int &request_left, int &num_of_total_requests);
+                       std::optional<std::string> &first_response, 
+                       std::condition_variable &cv,
+                       std::atomic<bool> &is_first_request_done);
                        
-void sendGetRequestsToServer(const std::string &url, int port, const HttpRequestPtr &req, int num_of_requests,
-                            std::function<void(const HttpResponsePtr &)> callback,
-                             std::mutex &mutex, std::vector<std::pair<int, 
-                             std::vector<double>>> &port_latencies, int &request_left, int &num_of_total_requests); 
+void handleForwarding(const std::string &forwardingMode, 
+                      std::vector<double> &port_latencies,
+                      std::vector<std::string> &backendUrls,
+                      std::optional<std::string> &first_response,
+                      std::mutex &mutex, 
+                      std::atomic<int> &currentBackendIndex);
 
-void handleForwarding(const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback,
-                      const std::string &forwardingMode, 
-                      int num_of_requests, 
-                      std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-                      std::vector<std::pair<std::string, int>> &backendUrls,
-                      int &request_left, int &num_of_total_requests);
 
-void calculateCDF(const std::vector<double>& latencies, Json::Value& cdfJson);
-
-// void printLatencies();
-std::pair<int, double> fastestResp(const std::vector<std::pair<int, std::vector<double>>> &port_latencies);
 void addLatency(std::vector<std::pair<int, std::vector<double>>>& port_latencies, int port, double latency);
 
 #endif // SERVER_H
