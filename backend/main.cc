@@ -309,7 +309,7 @@ void startProxy(int port) {
         handleForwarding(forwardingMode, port_latencies, backendUrls, first_response, mutex, currentBackendIndex);
 
         // loop until all requests are done
-        LOG_INFO << "All requests are done. Processing latencies...";
+        LOG_INFO << "All requests are done. Setting upp the JSON...";
                 json json_latencies;
                 json_latencies["Forwarding_mode"] = forwardingMode;
                 json_latencies["Latency"] = port_latencies;
@@ -320,7 +320,7 @@ void startProxy(int port) {
                 callback(resp);
     });
 
-    // New handler to respond to /call
+    // New handler to respond to /call which shows the callback response of the latest/fastest request from the backend 
     app().registerHandler("/call", [&first_response, &mutex](const HttpRequestPtr &req, std::function<void(const HttpResponsePtr &)> &&callback) {
         std::string response_body;
 

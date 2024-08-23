@@ -54,12 +54,13 @@ def calculate_cdf(num_requests = 1, prompt = ""):
         if(is_port_in_use(9000)):
             kill_process_by_port(9000)
 
-        subprocess.Popen([f'./backend 9000 proxy {serving_approach} {prompt}'], cwd='build', shell=True)
-        time.sleep(1) # Wait for the requests to be processed
+        subprocess.Popen([f'./backend 9000 proxy {serving_approach} {prompt}'], cwd='../backend/build', shell=True)
+        time.sleep(2) # Wait for the requests to be processed
 
         #loops through the number of requests and updates the latency data
-        for _ in range(num_requests):
+        for i in range(num_requests):
             # Call start_serv and store the result in the corresponding list
+            print(f"{i} requests served for {serving_approach}")
             data[serving_approach] = send_request()
             time.sleep(0.01) # Wait for the requests to be processed
         kill_process_by_port(9000)
@@ -68,56 +69,39 @@ def calculate_cdf(num_requests = 1, prompt = ""):
     plt.figure()
 
     for serving_approach, latencies in data.items():
-        if serving_approach != "forward_all":
-            sotr = np.sort(np.array(latencies))
-            cdf = np.arange(1, len(sotr) + 1) / len(sotr)
+        sotr = np.sort(np.array(latencies))
+        cdf = np.arange(1, len(sotr) + 1) / len(sotr)
 
-            # Plot CDF
-            plt.plot(sotr, cdf, marker='o', label=f'Port {serving_approach}')
-    
+        # Plot CDF
+        plt.plot(sotr, cdf, marker='o', label=f'Port {serving_approach}')
+
+        # Set x-axis limits conditionally
+        if serving_approach == "forward_all":
+            plt.xlim(0, 500)
+
+    # For other serving approaches, ensure the x-axis starts from 0
+    plt.xlim(left=0)
+
     # Labeling
     plt.xlabel('Milliseconds')
     plt.ylabel('CDF')
     plt.suptitle('CDF of Response Time', fontsize=16, ha='center')
-    plt.title(f'Serving Approaches Excluding "forward_all", Requests: {num_requests}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
+    plt.title(f'Serving Approaches, Requests: {num_requests}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
     plt.legend(title='Port', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
     plt.tight_layout()
 
     # Save and display the plot
-    plt.savefig('CDF_plot_Approaches.png')
+    plt.savefig('CDF_plot.png')
     print("Image saved!")
-    subprocess.Popen('imview CDF_plot_Approaches.png', shell=True)
-
-    # Plot specifically for 'forward_all'
-    plt.figure()
-
-    latencies = data["forward_all"]
-    sotr = np.sort(np.array(latencies))
-    cdf = np.arange(1, len(sotr) + 1) / len(sotr)
-
-    # Plot CDF
-    plt.plot(sotr, cdf, marker='o', label='Port forward_all', color='black')
-
-    # Labeling
-    plt.xlabel('Milliseconds')
-    plt.ylabel('CDF')
-    plt.suptitle('CDF of Response Time for "forward_all"', fontsize=16, ha='center')
-    plt.title(f'Requests: {num_requests}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
-    plt.legend(title='Port', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True)
-    plt.tight_layout()
-
-    # Save and display the second plot
-    plt.savefig('CDF_forWard_all_plot.png')
-    print("Second image saved!")
-    subprocess.Popen('imview CDF_forWard_all_plot.png', shell=True)
+    subprocess.Popen('imview CDF_plot.png', shell=True)
 
     close_all_processes()
     
 def measure_load_vs_latency(load_levels, prompt=""):
     # Hardcoded serving approaches
     serving_approaches = ["forward_all", "forward_random", "forward_round", "forward_two"]
+    # serving_approaches = ["forward_random", "forward_round", "forward_two"]
     # Start the backend and api servers
     start_serv()
     # Dictionary to store latencies for each serving approach
@@ -126,13 +110,13 @@ def measure_load_vs_latency(load_levels, prompt=""):
     # Create and start threads for each combination of serving approach and load level
     #loops through the serving approaches
     for serving_approach in serving_approaches:
-        # Open the proxy server
+        #closes any port 9000 to let the proxy start clean
         if(is_port_in_use(9000)):
             kill_process_by_port(9000)
 
         #loops through the load levels 
         for load in load_levels:
-            subprocess.Popen([f'./backend 9000 proxy {serving_approach} {prompt}'], cwd='build', shell=True)
+            subprocess.Popen([f'./backend 9000 proxy {serving_approach} {prompt}'], cwd='../backend/build', shell=True)
             time.sleep(1) # Wait for the requests to be processed
 
             # Create a thread to similate concurrent requests
@@ -146,55 +130,44 @@ def measure_load_vs_latency(load_levels, prompt=""):
             for thread in threads:
                 thread.join()
             
-            #last request to get all the accumulated data in the proxy server
+            #last request to get all the accumulated data that is stored in the proxy server
             data = send_request()
 
             latencies_by_approach[serving_approach].append((load, np.mean(data)))
             kill_process_by_port(9000)
 
-    # Plot for all serving approaches except 'forward_all'
+        # Plot for all serving approaches except 'forward_all'
     print(f"latencies_by_approach: {latencies_by_approach}")
+
+    # Create a single plot for all serving approaches
     plt.figure()
 
     for serving_approach, latencies in latencies_by_approach.items():
-        if serving_approach != "forward_all":
-            loads, avg_latencies = zip(*sorted(latencies))
-            plt.plot(loads, avg_latencies, marker='o', label=f'{serving_approach}')
-    
+        loads, avg_latencies = zip(*sorted(latencies))
+        
+        # Plot the data
+        plt.plot(loads, avg_latencies, marker='o', label=f'{serving_approach}')
+        
+        # Set y-axis limits conditionally
+        if serving_approach == "forward_all":
+            plt.ylim(0, 1000)
+
+    # For other serving approaches, ensure the y-axis starts from 0
+    plt.ylim(bottom=0)
+
     # Labeling
     plt.xlabel('Load (Requests per Second)')
     plt.ylabel('Average Latency (ms)')
     plt.suptitle('Load vs Average Latency for Different Serving Approaches', fontsize=16, ha='center')
-    plt.title(f'Load Levels: {load_levels}, Prompt: {prompt} prompt', fontsize=10, ha='center', va='center')
+    plt.title(f'Load Levels: {load_levels}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
     plt.legend(title='Serving Approach', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
     plt.tight_layout()
 
     # Save and display the plot
-    plt.savefig('Load_vs_Latency_Approaches.png')
+    plt.savefig('Load_vs_Latency.png')
     print("Image saved!")
-    subprocess.Popen('imview Load_vs_Latency_Approaches.png', shell=True)
-
-    # Plot specifically for 'forward_all'
-    plt.figure()
-
-    if "forward_all" in latencies_by_approach:
-        loads, avg_latencies = zip(*sorted(latencies_by_approach["forward_all"]))
-        plt.plot(loads, avg_latencies, marker='o', label='forward_all', color='black')
-
-        # Labeling
-        plt.xlabel('Load (Requests per Second)')
-        plt.ylabel('Average Latency (ms)')
-        plt.suptitle('Load vs Average Latency for "forward_all"', fontsize=16, ha='center')
-        plt.title(f'Load Levels: {load_levels}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
-        plt.legend(title='Serving Approach', bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True)
-        plt.tight_layout()
-
-        # Save and display the second plot
-        plt.savefig('Load_vs_Latency_forward_all.png')
-        print("Second image saved!")
-        subprocess.Popen('imview Load_vs_Latency_forward_all.png', shell=True)
+    subprocess.Popen('imview Load_vs_Latency.png', shell=True)
 
     close_all_processes()
     
@@ -210,7 +183,7 @@ def start_serv():
             continue
         
         try:
-            subprocess.Popen([f'./backend {port} backend'], cwd='build', shell=True)
+            subprocess.Popen([f'./backend {port} backend'], cwd='../backend/build', shell=True)
             time.sleep(0.5)
         except Exception as e:
             print(f"Failed to start server on port {port}: {e}")
@@ -223,7 +196,7 @@ def start_serv():
             continue
         
         try:
-            subprocess.Popen([f'python3 app.py --port {port}'], cwd='API', shell=True)
+            subprocess.Popen([f'python3 app.py --port {port}'], cwd='../backend/API', shell=True)
             time.sleep(4)
         except Exception as e:
             print(f"Failed to start server on port {port}: {e}")
@@ -252,13 +225,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     print("Running...")
-    # for testing single request\
-
+    ###for testing single request
     # start_serv()
-    # # close_all_processes()
+    close_all_processes()
     # kill_process_by_port(9000)
     
-
     if(args.measure == "load"):
         measure_load_vs_latency(args.load_levels, args.prompt)
         print("Press Ctrl+C to stop the servers")
