@@ -40,6 +40,7 @@ def close_all_processes():
 
 def calculate_cdf(num_requests = 1, prompt = ""):
     data = {
+    # comment this to remove forward_all to the measurement 
     "forward_all" : [],
     "forward_random" : [], 
     "forward_two" : [], 
@@ -73,7 +74,7 @@ def calculate_cdf(num_requests = 1, prompt = ""):
         cdf = np.arange(1, len(sotr) + 1) / len(sotr)
 
         # Plot CDF
-        plt.plot(sotr, cdf, marker='o', label=f'Port {serving_approach}')
+        plt.plot(sotr, cdf, marker=None , label=f'Port {serving_approach}')
 
         # Set x-axis limits conditionally
         if serving_approach == "forward_all":
@@ -99,16 +100,20 @@ def calculate_cdf(num_requests = 1, prompt = ""):
     close_all_processes()
     
 def measure_load_vs_latency(load_levels, prompt=""):
-    # Hardcoded serving approaches
-    serving_approaches = ["forward_all", "forward_random", "forward_round", "forward_two"]
-    # serving_approaches = ["forward_random", "forward_round", "forward_two"]
+    # comment this to remove forward_all from the measurement 
+    serving_approaches = [
+                        "forward_all",
+                        "forward_random",
+                        "forward_round",
+                        "forward_two"]
+
     # Start the backend and api servers
     start_serv()
+
     # Dictionary to store latencies for each serving approach
     latencies_by_approach = {approach: [] for approach in serving_approaches}
 
     # Create and start threads for each combination of serving approach and load level
-    #loops through the serving approaches
     for serving_approach in serving_approaches:
         #closes any port 9000 to let the proxy start clean
         if(is_port_in_use(9000)):
@@ -121,7 +126,7 @@ def measure_load_vs_latency(load_levels, prompt=""):
 
             # Create a thread to similate concurrent requests
             threads = []
-            for _ in range(load - 1):
+            for _ in range(load):
                 thread = threading.Thread(target=send_request)
                 thread.start()
                 threads.append(thread)
@@ -136,7 +141,6 @@ def measure_load_vs_latency(load_levels, prompt=""):
             latencies_by_approach[serving_approach].append((load, np.mean(data)))
             kill_process_by_port(9000)
 
-        # Plot for all serving approaches except 'forward_all'
     print(f"latencies_by_approach: {latencies_by_approach}")
 
     # Create a single plot for all serving approaches
@@ -146,7 +150,7 @@ def measure_load_vs_latency(load_levels, prompt=""):
         loads, avg_latencies = zip(*sorted(latencies))
         
         # Plot the data
-        plt.plot(loads, avg_latencies, marker='o', label=f'{serving_approach}')
+        plt.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
         
         # Set y-axis limits conditionally
         if serving_approach == "forward_all":
@@ -189,7 +193,6 @@ def start_serv():
             print(f"Failed to start server on port {port}: {e}")
 
     # Open the Flask application
-
     for port in embedded_port:
         if is_port_in_use(port):
             print(f"Port {port} is in use. Skipping...")
@@ -206,11 +209,11 @@ def start_serv():
 
 def send_request():
     try:
-        #load
         response = requests.get("http://localhost:9000")
 
         data = response.json().get('Latency', [])
         return data
+
     except Exception as e:
         close_all_processes()
         print(f"Failed to get latencies: {e}")
