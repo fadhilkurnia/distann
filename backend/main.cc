@@ -1,8 +1,12 @@
 // distann - backend & backend-proxy
 
+#include <atomic>
 #include <curl/curl.h>
 #include <drogon/drogon.h>
 #include <iostream>
+#include <mutex>
+#include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -11,84 +15,100 @@
 
 using json = nlohmann::json;
 using namespace drogon;
+using Callback = std::function<void(const HttpResponsePtr &)>;
 
-std::string mode            = "backend";        // Default mode
-std::string forwardingMode  = "forward_random"; // Default forwarding mechanism
-int         num_of_requests = 1; // Default number of requests per server
+const std::string default_server_mode = "backend"; // Default mode
+const std::string default_serving_mode =
+    "forward_random"; // Default forwarding mechanism
 int power = 1; // Default number of servers to forward to for fastest n number
                // of servers
-std::string promptType = "word"; // Default prompt type
+
+// prepare the backend hosts, and a random generator to chose the backend.
+const std::vector<std::pair<std::string, int>> backend_hosts = {
+    {"127.0.0.1", 10000}, {"127.0.0.1", 11000}, {"127.0.0.1", 12000},
+    {"127.0.0.1", 13000}, {"127.0.0.1", 14000}, {"127.0.0.1", 15000},
+};
+const int num_backend_hosts = backend_hosts.size();
 
 // ========================================================================== //
-//                           Begin Function Declaration                       //
+//                          Begin Function Declarations                       //
 // ========================================================================== //
-void   startBackend(int port);
-void   startProxy(int port, int num_of_requests);
+void startBackend(const int port);
+void startProxy(const int port, const std::string &forward_mode);
+void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
+                    Callback &&callback);
+void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback);
+void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback);
+void forwardRequestToAll(const HttpRequestPtr &req, Callback &&callback);
+void forwardRequestToN(const HttpRequestPtr &req, Callback &&callback,
+                       const int n);
+void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
+                                  Callback            &&callback);
+
 size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *s);
-void   sendSingleRequest(
-      const std::string &url, int port, const HttpRequestPtr &req,
-      std::function<void(const HttpResponsePtr &)> callback, std::mutex &mutex,
-      std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-      int &request_left, int &num_of_total_requests);
-void handleForwarding(
-    const HttpRequestPtr                          &req,
-    std::function<void(const HttpResponsePtr &)> &&callback,
-    const std::string &forwardingMode, int num_of_requests,
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-    std::vector<std::pair<std::string, int>> &backendUrls, int &request_left,
-    int &num_of_total_requests);
-std::pair<int, double> fastestResp(
-    const std::vector<std::pair<int, std::vector<double>>> &port_latencies);
-void addLatency(
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies, int port,
-    double latency);
+
+int getRandomInt(const int &min, const int &max) {
+  static thread_local std::mt19937   generator;
+  std::uniform_int_distribution<int> distribution(min, max);
+  return distribution(generator);
+}
 
 // ========================================================================== //
-//                            End Function Declaration                        //
+//                           End Function Declarations                        //
 // ========================================================================== //
 
 // to start backend do: ./backend (port) (mode) (optional:forwarding_Mode)
 // (optional:num_of_requests)
 int main(int argc, char *argv[]) {
-  std::string binary_name = argv[0];
+  const std::string binary_name = argv[0];
 
-  if (argc < 2) {
+  if (argc < 4) {
     std::cerr << "Usage: " << std::endl
-              << "    " << binary_name
-              << " <port> <mode> <forwarding_mode> <num_of_requests> <power> "
-                 "<prompt>\n";
+              << "    " << binary_name << " <port> <mode> <forward_mode>\n";
     return 1;
   }
 
-  int port = std::stoi(argv[1]);
-  mode     = argv[2];
+  const int         port         = std::stoi(argv[1]);
+  const std::string server_mode  = argv[2];
+  const std::string forward_mode = argv[3];
 
-  if (argc > 3) {
-    forwardingMode = argv[3];
+  // validate the server mode
+  if (server_mode != "backend" && server_mode != "proxy") {
+    std::cerr << "Invalid server mode:" << server_mode << std::endl;
+    std::cerr << "Valid server mode are 'backend' or 'proxy'" << std::endl;
+    return 1;
   }
 
-  if (argc > 4) {
-    num_of_requests = std::stoi(argv[4]);
+  // validate the forwarding mode
+  std::vector<std::string> valid_forward_mode    = {"all", "random_one",
+                                                    "random_two", "round_robin"};
+  bool                     is_forward_mode_valid = false;
+  for (auto &mode : valid_forward_mode) {
+    if (forward_mode == mode) {
+      is_forward_mode_valid = true;
+      break;
+    }
   }
-
-  if (argc > 5) {
-    power = std::stoi(argv[5]);
-  }
-
-  if (argc > 6) {
-    promptType = argv[6];
+  if (!is_forward_mode_valid) {
+    std::cerr << "Invalid forwarding mode:" << forward_mode << std::endl;
+    std::cerr << "Valid modes are ";
+    for (auto &mode : valid_forward_mode) {
+      std::cerr << "'" << mode << "' ";
+    }
+    std::cerr << std::endl;
+    return 1;
   }
 
   std::cout << "Running distann server with the following config:\n"
             << " - port         : " << port << std::endl
-            << " - server mode  : " << mode << std::endl
-            << " - serving mode : " << forwardingMode << std::endl
+            << " - server mode  : " << server_mode << std::endl
+            << " - forward mode : " << forward_mode << std::endl
             << std::endl;
 
-  if (mode == "backend") {
+  if (server_mode == "backend") {
     startBackend(port);
-  } else if (mode == "proxy") {
-    startProxy(port, num_of_requests);
+  } else if (server_mode == "proxy") {
+    startProxy(port, forward_mode);
   } else {
     std::cerr << "Invalid mode. Use 'backend' or 'proxy'." << std::endl;
     return 1;
@@ -104,58 +124,6 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   s->append(static_cast<char *>(contents), totalSize);
   return totalSize;
 }
-
-// thread pool
-
-class ThreadPool {
-public:
-  ThreadPool(size_t numThreads) {
-    for (size_t i = 0; i < numThreads; ++i) {
-      workers.emplace_back([this]() {
-        while (true) {
-          std::function<void()> task;
-          {
-            std::unique_lock<std::mutex> lock(queueMutex);
-            condition.wait(lock, [this]() { return !tasks.empty() || stop; });
-            if (stop && tasks.empty())
-              return;
-            task = std::move(tasks.front());
-            tasks.pop();
-          }
-          task();
-        }
-      });
-    }
-  }
-
-  template <class F> void enqueue(F &&f) {
-    {
-      std::unique_lock<std::mutex> lock(queueMutex);
-      if (stop)
-        throw std::runtime_error("enqueue on stopped ThreadPool");
-      tasks.emplace(std::forward<F>(f));
-    }
-    condition.notify_one();
-  }
-
-  ~ThreadPool() {
-    {
-      std::unique_lock<std::mutex> lock(queueMutex);
-      stop = true;
-    }
-    condition.notify_all();
-    for (std::thread &worker : workers) {
-      worker.join();
-    }
-  }
-
-private:
-  std::vector<std::thread>          workers;
-  std::queue<std::function<void()>> tasks;
-  std::mutex                        queueMutex;
-  std::condition_variable           condition;
-  bool                              stop = false;
-};
 
 void startBackend(int port) {
   // Open file with our embedded image vectors
@@ -204,9 +172,6 @@ void startBackend(int port) {
   in.close();
 
   app().setLogLevel(trantor::Logger::kDebug);
-
-  using Callback = std::function<void(const HttpResponsePtr &)>;
-
   app().registerHandler("/",
                         [](const HttpRequestPtr &req, Callback &&callback) {
                           auto resp = HttpResponse::newHttpResponse();
@@ -370,243 +335,168 @@ void startBackend(int port) {
   app().addListener(host, port).run();
 }
 
-void startProxy(int port, int num_of_requests) {
-  std::vector<std::pair<int, std::vector<double>>> port_latencies = {
-      {10000, {}}, {11000, {}}, {12000, {}},
-      {13000, {}}, {14000, {}}, {15000, {}},
-  };
-
-  std::vector<std::pair<std::string, int>> backendUrls = {
-      {"http://localhost:10000", 10000}, {"http://localhost:11000", 11000},
-      {"http://localhost:12000", 12000}, {"http://localhost:13000", 13000},
-      {"http://localhost:14000", 14000}, {"http://localhost:15000", 15000},
-  };
-
-  std::vector<std::string> word     = {"cat",   "dog",  "car",
-                                       "plane", "bird", "flower"};
-  std::vector<std::string> sentence = {
-      "The cat is on the mat",   "The dog is in the house",
-      "The car is on the road",  "The plane is in the sky",
-      "The bird is in the tree", "The flower is in the garden"};
-  std::vector<std::string> mixed = {"The cat is on the mat",   "bird",
-                                    "The car is on the road",  "plane",
-                                    "The plane is in the sky", "car"};
-
-  int request_left          = 0; // Number of requests left to be processed
-  int num_of_total_requests = 0; // Total number of requests processed
-
-  for (int i = 0; i < backendUrls.size(); i++) {
-    if (promptType == "word") {
-      backendUrls[i].first += "/api/search?prompt=" + word[i];
-    } else if (promptType == "sentence") {
-      backendUrls[i].first += "/api/search?prompt=" + sentence[i];
-    } else if (promptType == "mixed") {
-      backendUrls[i].first += "/api/search?prompt=" + mixed[i];
-    }
-  }
-
+void startProxy(const int port, const std::string &forward_mode) {
+  const std::string default_forward_mode = "random_one";
   app().registerHandler(
-      "/",
-      [&num_of_requests, &port_latencies, &backendUrls, &request_left,
-       &num_of_total_requests](
-          const HttpRequestPtr                          &req,
-          std::function<void(const HttpResponsePtr &)> &&callback) mutable {
-        // try not to use global function
-        // define counter in lambda function
-        // 1. store the callback function
-        // 2. spawn requests, each sending a request to a different backend
-        // server . response; . response.push_back(response); .count = 5
-        // 3. get the fastest response time and return it to the user
-        // concurrent vector / hashmap
-
-        handleForwarding(req, std::move(callback), forwardingMode,
-                         num_of_requests, port_latencies, backendUrls,
-                         request_left, num_of_total_requests);
-
-        // loop until all requests are done
-        while (request_left > -1) {
-          if (request_left == 0) {
-            json json_latencies;
-            json_latencies["total_requests"]   = num_of_total_requests;
-            json_latencies["fastest_response"] = fastestResp(port_latencies);
-            json_latencies["latencies"]        = port_latencies;
-            auto resp = HttpResponse::newHttpResponse();
-            resp->setBody(json_latencies.dump());
-            resp->setContentTypeCode(CT_APPLICATION_JSON);
-            resp->setStatusCode(k200OK);
-            callback(resp);
-            // printLatencies(port_latencies);
-            break;
-          }
-          LOG_INFO << "Requests left: " << request_left << "\n";
-          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      "/api/search",
+      [&default_forward_mode](const HttpRequestPtr &req, Callback &&callback) {
+        LOG_INFO << "Receiving request ...";
+        auto forward_mode = req->getOptionalParameter<std::string>("forward");
+        if (!forward_mode.has_value()) {
+          forward_mode.emplace(default_forward_mode);
         }
+
+        forwardRequest(req, forward_mode.value(), std::move(callback));
+        return;
       });
 
-  std::string host = "0.0.0.0";
-  LOG_INFO << "Running distann proxy server on " << host << ":" << port
-           << "\nforwarding mode: " << forwardingMode << " and "
-           << num_of_requests << " requests\n";
-
+  const std::string host = "0.0.0.0";
+  LOG_INFO << "Running distann proxy server on " << host << ":" << port << ". "
+           << "Forwarding mode '" << forward_mode << "'.";
   app().addListener(host, port).run();
 }
 
-void sendSingleRequest(
-    const std::string &url, int port, const HttpRequestPtr &req,
-    std::function<void(const HttpResponsePtr &)> callback, std::mutex &mutex,
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-    int &request_left, int &num_of_total_requests) {
+void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
+                    Callback &&callback) {
+  // TODO: use persistent client for each backend, for better performance.
 
-  auto start = std::chrono::high_resolution_clock::now();
+  LOG_INFO << "Forwarding request with mode=" << forward_mode;
 
-  CURL       *curl;
-  CURLcode    res;
-  std::string readBuffer;
-  LOG_INFO << "Sending request to " << url;
-  curl = curl_easy_init();
-  if (curl) {
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+  if (forward_mode == "random_one") {
+    forwardRequestToOne(req, std::move(callback));
+    return;
 
-    res = curl_easy_perform(curl);
+  } else if (forward_mode == "random_two") {
+    forwardRequestToTwo(req, std::move(callback));
+    return;
 
-    auto   end = std::chrono::high_resolution_clock::now();
-    double latency =
-        std::chrono::duration<double, std::milli>(end - start).count();
+  } else if (forward_mode == "all") {
+    forwardRequestToAll(req, std::move(callback));
+    return;
 
-    if (res != CURLE_OK) {
-      std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res)
-                << std::endl;
-    } else {
-      LOG_INFO << "Success response from " << url;
-      num_of_total_requests++;
-    }
-
-    std::unique_lock<std::mutex> lock(mutex);
-
-    addLatency(port_latencies, port, latency);
-    request_left--;
-    LOG_INFO << "Request left in thread: " << request_left;
-
-    curl_easy_cleanup(curl);
   } else {
-    std::cerr << "Failed to initialize curl" << std::endl;
+    auto response = HttpResponse::newHttpResponse();
+    response->setBody("Unknown forwarding mode.");
+    response->setStatusCode(k400BadRequest);
+    callback(response);
+    return;
   }
 }
 
-void sendGetRequestsToServer(
-    const std::string &url, int port, const HttpRequestPtr &req,
-    int num_of_requests, std::function<void(const HttpResponsePtr &)> callback,
-    std::mutex                                       &mutex,
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-    int &request_left, int &num_of_total_requests) {
+void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
+  // prepare the target backend server to forward the request to
+  int         random_backend_id        = getRandomInt(0, num_backend_hosts - 1);
+  auto        target_backend_host_pair = backend_hosts[random_backend_id];
+  std::string target_backend_ip        = target_backend_host_pair.first;
+  int         target_backend_port      = target_backend_host_pair.second;
 
-  ThreadPool pool(50); // Use a thread pool with # of worker threads
+  // forward the request to the target backend, synchronously.
+  // TODO: use persistent client for each backend, for better performance.
+  HttpClientPtr client =
+      HttpClient::newHttpClient(target_backend_ip, target_backend_port);
+  auto req_result = client->sendRequest(req);
 
-  for (int reqNum = 0; reqNum < num_of_requests; ++reqNum) {
-    pool.enqueue([&, url, port]() {
-      sendSingleRequest(url, port, req, callback, std::ref(mutex),
-                        std::ref(port_latencies), std::ref(request_left),
-                        std::ref(num_of_total_requests));
-    });
-  }
+  // move the response for the proxy's client.
+  auto response = HttpResponse::newHttpResponse();
+  response      = std::move(req_result.second);
+
+  callback(response);
+  return;
 }
 
-void handleForwarding(
-    const HttpRequestPtr                          &req,
-    std::function<void(const HttpResponsePtr &)> &&callback,
-    const std::string &forwardingMode, int num_of_requests,
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies,
-    std::vector<std::pair<std::string, int>> &backendUrls, int &request_left,
-    int &num_of_total_requests) {
+void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
+  std::vector<std::thread>       threads;
+  std::atomic<bool>              is_first_request_done = false;
+  std::mutex                     response_lock;
+  std::optional<HttpResponsePtr> first_response;
 
-  std::atomic<int> currentBackendIndex(
-      0); // variable to keep track of the current backend index for round-robin
-          // forwarding
-  std::mutex               mutex;
-  std::vector<std::thread> threads;
-
-  if (forwardingMode == "forward_all") {
-    LOG_INFO << "Forwarding All" << "\n";
-    for (const auto &url : backendUrls) {
-      request_left += num_of_requests;
-      threads.emplace_back(sendGetRequestsToServer, url.first, url.second, req,
-                           num_of_requests, callback, std::ref(mutex),
-                           std::ref(port_latencies), std::ref(request_left),
-                           std::ref(num_of_total_requests));
-    }
-
-  } else if (forwardingMode == "forward_round") {
-    LOG_INFO << "Forwarding Round Robin";
-    request_left += num_of_requests;
-    for (int i = 0; i < num_of_requests; ++i) {
-      int   backendCount    = backendUrls.size();
-      int   currentIndex    = currentBackendIndex.fetch_add(1) % backendCount;
-      auto &selectedBackend = backendUrls[currentIndex];
-      sendSingleRequest(selectedBackend.first, selectedBackend.second, req,
-                        callback, mutex, port_latencies, request_left,
-                        num_of_total_requests);
-    }
-
-  } else if (forwardingMode == "forward_random") {
-    std::random_device              rd;
-    std::mt19937                    gen(rd());
-    std::uniform_int_distribution<> dis(0, backendUrls.size() - 1);
-    int                             randomIndex = dis(gen);
-    request_left += num_of_requests;
-    threads.emplace_back(
-        sendGetRequestsToServer, backendUrls[randomIndex].first,
-        backendUrls[randomIndex].second, req, num_of_requests, callback,
-        std::ref(mutex), std::ref(port_latencies), std::ref(request_left),
-        std::ref(num_of_total_requests));
-
-  } else if (forwardingMode == "forward_fastest") {
-    LOG_INFO << "Forwarding Power to " << power << " servers" << "\n";
-    for (int i = 0; i < power; i++) {
-      request_left += num_of_requests;
-      threads.emplace_back(sendGetRequestsToServer, backendUrls[i].first,
-                           backendUrls[i].second, req, num_of_requests,
-                           callback, std::ref(mutex), std::ref(port_latencies),
-                           std::ref(request_left),
-                           std::ref(num_of_total_requests));
-    }
-  }
-
-  for (auto &thread : threads) {
-    thread.join();
-  }
-}
-
-std::pair<int, double> fastestResp(
-    const std::vector<std::pair<int, std::vector<double>>> &port_latencies) {
-  std::pair<int, double> fastest_port = {-1, -1};
-
-  double min_latency = std::numeric_limits<double>::max();
-
-  for (const auto &entry : port_latencies) {
-    if (!entry.second.empty()) {
-      for (double latency : entry.second) {
-        if (latency < min_latency) {
-          min_latency  = latency;
-          fastest_port = {entry.first, latency};
+  // a lambda function that actually send request to backend, and record the
+  // first response among other threads.
+  auto sendRequestSetFastestResponse =
+      [&req, &is_first_request_done, &response_lock,
+       &first_response](HttpClientPtr &client) {
+        LOG_INFO << "Sending request to " << client->getPort();
+        auto req_result = client->sendRequest(req);
+        if (req_result.first != ReqResult::Ok) {
+          return;
         }
-      }
+
+        response_lock.lock();
+        if (!first_response.has_value()) {
+          first_response.emplace(req_result.second);
+        }
+        response_lock.unlock();
+
+        // Notify that we have a response received already.
+        // It is fine to have multiple threads set the value to `true`.
+        is_first_request_done = true;
+        is_first_request_done.notify_all();
+      };
+
+  std::vector<HttpClientPtr> http_clients;
+  std::unordered_set<int>    used_backend_ids;
+  for (int i = 0; i < 3; ++i) {
+    int random_backend_id = getRandomInt(0, num_backend_hosts - 1);
+    while (used_backend_ids.contains(random_backend_id)) {
+      random_backend_id = getRandomInt(0, num_backend_hosts - 1);
     }
+    used_backend_ids.insert(random_backend_id);
+
+    auto        target_backend_host_pair = backend_hosts[random_backend_id];
+    std::string target_backend_ip        = target_backend_host_pair.first;
+    int         target_backend_port      = target_backend_host_pair.second;
+    http_clients.push_back(
+        HttpClient::newHttpClient(target_backend_ip, target_backend_port));
   }
 
-  return fastest_port; // Returns an optional containing the port and the
-                       // fastest latency or std::nullopt if no latency found.
+  // use threads to send requests
+  for (auto &client : http_clients) {
+    threads.push_back(
+        std::thread(sendRequestSetFastestResponse, std::ref(client)));
+  }
+
+  // Wait for the fastest response. That is until the value is not `false`.
+  is_first_request_done.wait(false);
+
+  // Copy the response so we can forward it back to the client.
+  HttpResponsePtr copy_response;
+  response_lock.lock();
+  copy_response = std::move(first_response.value());
+  response_lock.unlock();
+
+  // Call back the client, sending the response.
+  callback(copy_response);
+
+  // Cleaning up all the threads, ensuring all of them terminate.
+  for (std::thread &t : threads) {
+    t.join();
+  }
+
+  return;
 }
 
-void addLatency(
-    std::vector<std::pair<int, std::vector<double>>> &port_latencies, int port,
-    double latency) {
-  for (auto &p : port_latencies) {
-    if (p.first == port) {
-      p.second.push_back(latency);
-      return;
-    }
-  }
-  std::cerr << "Port " << port << " not found.\n";
+void forwardRequestToN(const HttpRequestPtr &req, Callback &&callback,
+                       const int n) {
+  auto response = HttpResponse::newHttpResponse();
+  response->setBody("Forward to N is unimplemented :(");
+  response->setStatusCode(k501NotImplemented);
+  callback(response);
+  return;
+}
+
+void forwardRequestToAll(const HttpRequestPtr &req, Callback &&callback) {
+  auto response = HttpResponse::newHttpResponse();
+  response->setBody("Forward to all is unimplemented :(");
+  response->setStatusCode(k501NotImplemented);
+  callback(response);
+  return;
+}
+
+void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
+                                  Callback            &&callback) {
+  auto response = HttpResponse::newHttpResponse();
+  response->setBody("Forward with round robin is unimplemented :(");
+  response->setStatusCode(k501NotImplemented);
+  callback(response);
+  return;
 }
