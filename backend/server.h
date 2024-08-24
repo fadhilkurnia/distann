@@ -28,9 +28,6 @@
 #include <iostream>
 #include <stdio.h>
 
-
-
-
 using namespace hnswlib;
 using json = nlohmann::json;
 using namespace drogon;
