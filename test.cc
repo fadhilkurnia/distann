@@ -9,6 +9,8 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
+#include <vector>
+#include <optional>
 
 // A dummy process that "sending" request to a backend server.
 void sendRequest(const std::string& client_request,
@@ -20,7 +22,7 @@ void sendRequest(const std::string& client_request,
     // Does dummy processing by sleeping, mimicking sending and receiving
     // response from backend.
     std::cout << "thread-" << thread_id 
-        << ": curl forwarding request: '" << client_request <<"' ....\n";
+        << ": curl forwarding request: '" << client_request << "' ....\n";
     std::this_thread::sleep_for(
         std::chrono::milliseconds(2 + std::rand()%5));
     std::cout << "thread-" << thread_id 
