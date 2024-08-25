@@ -9,6 +9,7 @@ import time
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt #pip install matplotlib
+from matplotlib.gridspec import GridSpec
 import socket
 import threading
 
@@ -66,36 +67,81 @@ def calculate_cdf(num_requests = 1, prompt = ""):
             time.sleep(0.01) # Wait for the requests to be processed
         kill_process_by_port(9000)
 
-    # Plot for all serving approaches except 'forward_all'
-    plt.figure()
+    # Create a plot with two subplots for the broken y-axis side by side
+    fig = plt.figure(figsize=(14, 6))
+
+    # Use subplot2grid to place subplots
+    ax1 = plt.subplot2grid((1, 4), (0, 0), colspan=2)  # Left plot
+    ax2 = plt.subplot2grid((1, 4), (0, 2), colspan=2, sharey=ax1)  # Right plot, sharing y-axis with ax1
 
     for serving_approach, latencies in data.items():
-        sotr = np.sort(np.array(latencies))
-        cdf = np.arange(1, len(sotr) + 1) / len(sotr)
+        sorted_latencies = np.sort(np.array(latencies))
+        cdf = np.arange(1, len(sorted_latencies) + 1) / len(sorted_latencies)
 
-        # Plot CDF
-        plt.plot(sotr, cdf, marker=None , label=f'Port {serving_approach}')
+        # Plot the data on both axes with different y-limits
+        ax1.plot(sorted_latencies, cdf, marker=None, label=f'{serving_approach}')
+        ax2.plot(sorted_latencies, cdf, marker=None, label=f'{serving_approach}')
 
-        # Set x-axis limits conditionally
-        if serving_approach == "forward_all":
-            plt.xlim(0, 500)
+    # Set x-limits to focus on the desired ranges and create the break
+    ax2.set_xlim(100, 4800)  # Adjust based on the specific range needed before the gap
+    ax1.set_xlim(0, 50)     # Adjust based on the specific range needed after the gap
 
-    # For other serving approaches, ensure the x-axis starts from 0
-    plt.xlim(left=0)
+    # Define custom y-ticks for each axis
+    xticks1 = np.concatenate([
+        np.arange(0, 50, 5),     # 20.2, 20.4, ..., 30
+    ])
+
+    xticks2 = np.concatenate([
+        np.arange(100, 4900, 400)
+    ])
+
+    ax2.set_xticks(xticks2)
+    ax1.set_xticks(xticks1)
+
+
+    # Adjust positions of subplots to connect them
+    ax1_pos = ax1.get_position()  # Get the original position of ax1
+    ax2_pos = ax2.get_position()  # Get the original position of ax2
+
+    # Overlap ax2 with ax1 by setting ax2's x0 to ax1's x1
+    ax2.set_position([ax1_pos.x1, ax2_pos.y0, ax2_pos.width, ax2_pos.height])
+    ax1.set_position([ax1_pos.x0, ax1_pos.y0, ax1_pos.width, ax1_pos.height])
+    ax2.yaxis.set_tick_params(labelleft=False)
+
+    # Add diagonal lines to indicate the axis break
+    d = 0.015  # Size of diagonal lines in axes coordinates
+
+    # Diagonal lines for the axis break on the left plot (ax1)
+    kwargs = dict(transform=ax1.transAxes, color='k', clip_on=False)
+    ax1.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # Bottom-right diagonal
+    ax1.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # Bottom-left diagonal
+
+    # Diagonal lines for the axis break on the right plot (ax2)
+    kwargs.update(transform=ax2.transAxes)
+    ax2.plot((-d, +d), (-d, +d), **kwargs)  # Top-right diagonal
+    ax2.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # Top-left diagonal
 
     # Labeling
-    plt.xlabel('Milliseconds')
-    plt.ylabel('CDF')
-    plt.suptitle('CDF of Response Time', fontsize=16, ha='center')
-    plt.title(f'Serving Approaches, Requests: {num_requests}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
-    plt.legend(title='Port', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True)
-    plt.tight_layout()
+    ax1.set_xlabel('Milliseconds')
+    ax2.set_xlabel('Milliseconds')
+    ax1.set_ylabel('CDF')
+    ax2.set_ylabel('')  
+    # Hide y-axis tick labels but keep the axis line
+    ax2.yaxis.set_tick_params(labelleft=False, labelright=False)  # Hide tick labels
+    ax2.spines['left'].set_color('black')  # Keep the left spine (y-axis line) visible
+    # Hide the spines between ax1 and ax2 to connect the plots seamlessly
+    ax1.spines['right'].set_visible(False)
+    ax2.legend(title='Serving Approach', bbox_to_anchor=(1, 1), loc='upper left')
+
+    fig.suptitle(f'CDF of Response Time\n Serving Approaches, Requests: {num_requests}, Prompt: {prompt}', fontsize=16, ha='center')
+    ax1.grid(True)
+    ax2.grid(True)
+
+    # Adjust layout to overlap 
 
     # Save and display the plot
     plt.savefig('CDF_plot.png')
     print("Image saved!")
-    subprocess.Popen('imview CDF_plot.png', shell=True)
 
     close_all_processes()
     
@@ -107,11 +153,11 @@ def measure_load_vs_latency(load_levels, prompt=""):
                         "forward_round",
                         "forward_two"]
 
-    # Start the backend and api servers
-    start_serv()
-
     # Dictionary to store latencies for each serving approach
     latencies_by_approach = {approach: [] for approach in serving_approaches}
+
+    # Start the backend and api servers
+    start_serv()
 
     # Create and start threads for each combination of serving approach and load level
     for serving_approach in serving_approaches:
@@ -143,36 +189,83 @@ def measure_load_vs_latency(load_levels, prompt=""):
 
     print(f"latencies_by_approach: {latencies_by_approach}")
 
-    # Create a single plot for all serving approaches
-    plt.figure()
+    # Create a plot with two subplots stacked vertically to represent the broken axis
+    # Create a plot with a tight layout and no space between subplots
+    fig = plt.figure(figsize=(6, 7))
+    gs = GridSpec(2, 1, height_ratios=[1, 1])  # 2 rows, 1 column
+
+    # Use subplot2grid to place subplots
+    ax1 = fig.add_subplot(gs[0, 0])  # Top plot
+    ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)  # Bottom plot, sharing x-axis with ax1
 
     for serving_approach, latencies in latencies_by_approach.items():
         loads, avg_latencies = zip(*sorted(latencies))
-        
-        # Plot the data
-        plt.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
-        
-        # Set y-axis limits conditionally
-        if serving_approach == "forward_all":
-            plt.ylim(0, 1000)
 
-    # For other serving approaches, ensure the y-axis starts from 0
-    plt.ylim(bottom=0)
+        # Plot the data on both axes, with different y-limits
+        ax1.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
+        ax2.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
+
+    # Set y-limits to focus on the desired ranges and create the break
+    ax1.set_ylim(100, 4800)  # Adjust based on the specific range needed before the gap
+    ax2.set_ylim(0, 50)     # Adjust based on the specific range needed after the gap
+
+    # Define custom y-ticks for each axis
+    yticks1 = np.concatenate([
+        np.arange(0, 50, 5),     # 20.2, 20.4, ..., 30
+    ])
+
+    yticks2 = np.concatenate([
+        np.arange(100, 4900, 400)
+    ])
+
+    # Apply custom y-ticks to each subplot
+    ax1.set_yticks(yticks2)
+    ax2.set_yticks(yticks1)
+
+    # Manually adjust positions to overlap subplots
+    ax1_pos = ax1.get_position()  # Get the original position of ax1
+    ax2_pos = ax2.get_position()  # Get the original position of ax2
+
+    # Overlap ax2 with ax1 by setting ax2's y0 to ax1's y1
+    ax2.set_position([ax2_pos.x0, ax2_pos.y0 - 0.022, ax2_pos.width, ax2_pos.height])
+    ax1.set_position([ax1_pos.x0, ax1_pos.y0 + 0.01, ax1_pos.width, ax1_pos.height])
+
+    # Add diagonal lines to indicate the axis break
+    d = 0.015  # Size of diagonal lines in axes coordinates
+    kwargs = dict(transform=ax1.transAxes, color='k', clip_on=False)
+    ax1.plot((-d, +d), (1 - d, 1 + d), **kwargs)  # Bottom-right diagonal
+    ax1.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)  # Bottom-left diagonal
+
+    kwargs.update(transform=ax2.transAxes)  # Switch to the right axis
+    ax2.plot((-d, +d), (-d, +d), **kwargs)  # Top-right diagonal
+    ax2.plot((1 - d, 1 + d), (-d, +d), **kwargs)  # Top-left diagonal
+
+    load_levels_str = ', '.join(map(str, load_levels))
 
     # Labeling
-    plt.xlabel('Load (Requests per Second)')
-    plt.ylabel('Average Latency (ms)')
-    plt.suptitle('Load vs Average Latency for Different Serving Approaches', fontsize=16, ha='center')
-    plt.title(f'Load Levels: {load_levels}, Prompt: {prompt}', fontsize=10, ha='center', va='center')
-    plt.legend(title='Serving Approach', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True)
+    ax2.set_xlabel('Load (Requests per Second)')
+    ax1.set_ylabel('Average Latency (ms)')
+    ax2.set_ylabel('Average Latency (ms)')
+
+    # Using LaTeX-like formatting for title
+    fig.suptitle(
+        f'Load vs Average Latency for Different Serving Approaches\n'
+        f'Load: {load_levels_str}\n'
+        f'Prompt: {prompt}',
+    )
+    ax1.legend(title='Serving Approach', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.grid(True)
+    ax2.grid(True)
+
+    # Remove x-tick labels on the top plot
+    ax1.xaxis.set_tick_params(labelbottom=False)
+
     plt.tight_layout()
 
     # Save and display the plot
     plt.savefig('Load_vs_Latency.png')
     print("Image saved!")
-    subprocess.Popen('imview Load_vs_Latency.png', shell=True)
-
+            
     close_all_processes()
     
 
@@ -235,12 +328,6 @@ if __name__ == "__main__":
     
     if(args.measure == "load"):
         measure_load_vs_latency(args.load_levels, args.prompt)
-        print("Press Ctrl+C to stop the servers")
-        while True:
-            time.sleep(1)
 
     elif(args.measure == "cdf"):
         calculate_cdf(args.num_requests, args.prompt)
-        print("Press Ctrl+C to stop the servers")
-        while True:
-            time.sleep(1)

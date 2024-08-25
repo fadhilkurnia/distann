@@ -273,7 +273,14 @@ void startProxy(int port) {
         {"http://localhost:15000"},
     };
 
-    std::vector<std::string> word = {"cat", "dog", "car", "plane", "bird", "flower"};
+    std::vector<std::string> word = {
+     "cat",
+     "dog",
+     "car",
+     "plane",
+     "bird",
+     "flower"
+     };
     std::vector<std::string> sentence  = {
         "The cat is on the mat",
         "The dog is in the house",
