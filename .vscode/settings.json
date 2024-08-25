@@ -1,5 +1,4 @@
 {
-    "C_Cpp.clang_format_fallbackStyle": "Google",
     "files.associations": {
         "*.js": "javascriptreact",
         "*.ts": "typescriptreact",
@@ -78,5 +77,14 @@
         "vector": "cpp",
         "algorithm": "cpp",
         "strstream": "cpp"
-    }
+    },
+    "clang-format.executable": "clang-format",
+    "clang-format.style": "file",
+    "clang-format.fallbackStyle": "Google",
+    "clang-format.formatOnSave": true,
+    "clang-format.formatOnType": true,
+    "clang-format.arguments": [
+        "-assume-filename=${workspaceFolder}/.clang-format"
+    ],
+    "C_Cpp.clang_format_fallbackStyle": "Google"
 }
