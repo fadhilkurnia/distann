@@ -2,6 +2,7 @@ import subprocess
 
 import psutil #pip install psutil
 
+
 # python3 measure.py --num_requests <number_of_requests> --measure <cdf / lead> --load_levels <load_level1> <load_level2> ...
 
 import requests 
@@ -78,6 +79,7 @@ def calculate_cdf(num_requests = 1, prompt = ""):
         sorted_latencies = np.sort(np.array(latencies))
         cdf = np.arange(1, len(sorted_latencies) + 1) / len(sorted_latencies)
 
+
         # Plot the data on both axes with different y-limits
         ax1.plot(sorted_latencies, cdf, marker=None, label=f'{serving_approach}')
         ax2.plot(sorted_latencies, cdf, marker=None, label=f'{serving_approach}')
@@ -85,6 +87,9 @@ def calculate_cdf(num_requests = 1, prompt = ""):
     # Set x-limits to focus on the desired ranges and create the break
     ax2.set_xlim(100, 4800)  # Adjust based on the specific range needed before the gap
     ax1.set_xlim(0, 50)     # Adjust based on the specific range needed after the gap
+    # Set y-limits to ensure the y-axis starts at 0
+    ax1.set_ylim(0, 1)
+    ax2.set_ylim(0, 1)
 
     # Define custom y-ticks for each axis
     xticks1 = np.concatenate([
@@ -133,7 +138,7 @@ def calculate_cdf(num_requests = 1, prompt = ""):
     ax1.spines['right'].set_visible(False)
     ax2.legend(title='Serving Approach', bbox_to_anchor=(1, 1), loc='upper left')
 
-    fig.suptitle(f'CDF of Response Time\n Serving Approaches, Requests: {num_requests}, Prompt: {prompt}', fontsize=16, ha='center')
+    fig.suptitle(f'CDF of Response Time\n Serving Approaches, Requests: {num_requests}, Prompt Type: {prompt}', fontsize=16, ha='center')
     ax1.grid(True)
     ax2.grid(True)
 
@@ -205,22 +210,22 @@ def measure_load_vs_latency(load_levels, prompt=""):
         ax1.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
         ax2.plot(loads, avg_latencies, marker=None, label=f'{serving_approach}')
 
-    # Set y-limits to focus on the desired ranges and create the break
-    ax1.set_ylim(100, 4800)  # Adjust based on the specific range needed before the gap
+    # Set x-limits to focus on the desired ranges and create the break
+    ax1.set_ylim(51, 1000)  # Adjust based on the specific range needed before the gap
     ax2.set_ylim(0, 50)     # Adjust based on the specific range needed after the gap
 
     # Define custom y-ticks for each axis
-    yticks1 = np.concatenate([
+    yticks2 = np.concatenate([
         np.arange(0, 50, 5),     # 20.2, 20.4, ..., 30
     ])
 
-    yticks2 = np.concatenate([
-        np.arange(100, 4900, 400)
+    yticks1 = np.concatenate([
+        np.arange(50, 1000, 100)
     ])
 
     # Apply custom y-ticks to each subplot
-    ax1.set_yticks(yticks2)
-    ax2.set_yticks(yticks1)
+    ax1.set_yticks(yticks1)
+    ax2.set_yticks(yticks2)
 
     # Manually adjust positions to overlap subplots
     ax1_pos = ax1.get_position()  # Get the original position of ax1
@@ -251,7 +256,7 @@ def measure_load_vs_latency(load_levels, prompt=""):
     fig.suptitle(
         f'Load vs Average Latency for Different Serving Approaches\n'
         f'Load: {load_levels_str}\n'
-        f'Prompt: {prompt}',
+        f'Prompt Type: {prompt}',
     )
     ax1.legend(title='Serving Approach', bbox_to_anchor=(1.05, 1), loc='upper left')
     ax1.grid(True)
