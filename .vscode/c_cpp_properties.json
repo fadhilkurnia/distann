@@ -4,7 +4,8 @@
             "name": "Mac",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/usr/local/include"
+                "/usr/local/include",
+                "/${env:VCPKG_ROOT}"
             ],
             "defines": [],
             "macFrameworkPath": [
