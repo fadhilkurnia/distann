@@ -28,7 +28,7 @@ const int num_backend_hosts = backend_hosts.size();
 // ========================================================================== //
 //                          Begin Function Declarations                       //
 // ========================================================================== //
-void startBackend(const int port);
+void startBackend(const int port, long seed);
 void startProxy(const int port, const std::string &forward_mode);
 void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
                     Callback &&callback);
@@ -52,20 +52,26 @@ int getRandomInt(const int &min, const int &max) {
 //                           End Function Declarations                        //
 // ========================================================================== //
 
-// to start backend do: ./backend (port) (mode) (optional:forwarding_Mode)
+// to start backend do: ./backend (port) (mode) (optional:forwarding_Mode) (optional: seed)
 // (optional:num_of_requests)
 int main(int argc, char *argv[]) {
   const std::string binary_name = argv[0];
 
   if (argc < 4) {
     std::cerr << "Usage: " << std::endl
-              << "    " << binary_name << " <port> <mode> <forward_mode>\n";
+              << "    " << binary_name << " <port> <mode> <forward_mode> <seed>\n";
     return 1;
   }
 
   const int port = std::stoi(argv[1]);
   const std::string server_mode = argv[2];
   const std::string forward_mode = argv[3];
+  long seed = 0;
+  if (argc == 5) {
+    seed = (long)std::stoi(argv[4]);
+  } else {
+    seed = (long)getRandomInt(0, 2147483647);
+  }
 
   // validate the server mode
   if (server_mode != "backend" && server_mode != "proxy") {
@@ -98,10 +104,11 @@ int main(int argc, char *argv[]) {
             << " - port         : " << port << std::endl
             << " - server mode  : " << server_mode << std::endl
             << " - forward mode : " << forward_mode << std::endl
+            << " - seed         : " << seed << std::endl
             << std::endl;
 
   if (server_mode == "backend") {
-    startBackend(port);
+    startBackend(port, seed);
   } else if (server_mode == "proxy") {
     startProxy(port, forward_mode);
   } else {
@@ -120,7 +127,7 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   return totalSize;
 }
 
-void startBackend(int port) {
+void startBackend(int port, long seed) {
   // Open file with our embedded image vectors
   const char *embeddingsFile = "../data/imageEmbeddings.txt";
   std::ifstream in(embeddingsFile, std::ios::binary);
@@ -146,7 +153,7 @@ void startBackend(int port) {
   hnswlib::L2Space space(dim);
   hnswlib::HierarchicalNSW<float> *alg_hnsw =
       new hnswlib::HierarchicalNSW<float>(&space, max_elements, M,
-                                          ef_construction);
+                                          ef_construction, seed);
 
   // Create vector to hold data we read from input file
   std::vector<float> currEmbedd(dim);
