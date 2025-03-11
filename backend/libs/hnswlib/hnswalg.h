@@ -207,6 +207,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     int getRandomLevel(double reverse_size) {
         std::uniform_real_distribution<double> distribution(0.0, 1.0);
         double r = -log(distribution(level_generator_)) * reverse_size;
+        std::cout << "Random level: " << (int) r << std::endl;
         return (int) r;
     }
 
