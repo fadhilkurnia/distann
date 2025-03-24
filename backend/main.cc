@@ -43,7 +43,7 @@ void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
 size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *s);
 
 int getRandomInt(const int &min, const int &max) {
-  static thread_local std::mt19937 generator(time);
+  static thread_local std::mt19937 generator(time(0));
   std::uniform_int_distribution<int> distribution(min, max);
   return distribution(generator);
 }
