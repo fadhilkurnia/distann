@@ -223,7 +223,7 @@ void startBackend(int port) {
       return;
     }
 
-    // Latency changes//
+    // start time //
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // I am too send a post request to my API, I want to eventually start
@@ -305,7 +305,7 @@ void startBackend(int port) {
     }
     curl_global_cleanup();
 
-    // Latency changes//
+    // End time //
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end_time - start_time;
     std::cout << "Search latency in HNSW: " << duration.count() << " seconds." << std::endl;
@@ -389,8 +389,9 @@ void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
 }
 
 void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
-  // Latency changes //
+  // Start time //
   auto start_time = std::chrono::high_resolution_clock::now();
+  LOG_INFO << "Forwarding request to one backend...";
 
   // prepare the target backend server to forward the request to
   int random_backend_id = getRandomInt(0, num_backend_hosts - 1);
@@ -408,7 +409,7 @@ void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
   auto response = HttpResponse::newHttpResponse();
   response = std::move(req_result.second);
 
-  // Latency changes //
+  // End time //
   auto end_time = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end_time - start_time;
   std::cout << "Request forwarding latency (to one backend): " << duration.count() << " seconds." << std::endl;
@@ -419,8 +420,9 @@ void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
 
 void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
 
-  // Latency changes //
+  // start time //
   auto start_time = std::chrono::high_resolution_clock::now();
+  LOG_INFO << "Forwarding request to two backends...";
 
   std::vector<std::thread> threads;
   std::atomic<bool> is_first_request_done = false;
@@ -481,7 +483,7 @@ void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
   copy_response = std::move(first_response.value());
   response_lock.unlock();
 
-  // Latency changes //
+  // End time //
   auto end_time = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end_time - start_time;
   std::cout << "Request forwarding latency (to two backends): " << duration.count() << " seconds." << std::endl;
@@ -522,3 +524,11 @@ void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
   callback(response);
   return;
 }
+
+/*auto start_time = std::chrono::high_resolution_clock::now();
+
+... // Actual code for embedding generation and search // 
+
+auto end_time = std::chrono::high_resolution_clock::now();
+std::chrono::duration<double> duration = end_time - start_time;
+std::cout << "Search latency in HNSW: " << duration.count() << " seconds." << std::endl;*/
