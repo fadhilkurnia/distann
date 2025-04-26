@@ -525,10 +525,3 @@ void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
   return;
 }
 
-/*auto start_time = std::chrono::high_resolution_clock::now();
-
-... // Actual code for embedding generation and search // 
-
-auto end_time = std::chrono::high_resolution_clock::now();
-std::chrono::duration<double> duration = end_time - start_time;
-std::cout << "Search latency in HNSW: " << duration.count() << " seconds." << std::endl;*/
