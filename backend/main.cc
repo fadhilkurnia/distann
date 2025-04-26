@@ -230,11 +230,14 @@ void startBackend(int port, long seed) {
       callback(resp);
       return;
     }
+
+    // Latency changes//
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     // I am too send a post request to my API, I want to eventually start
     // the API directlley through C++ code but dont want to use system,
     // looking into windows APIS for that
-
-    // following code form curl documentation for simple HTTP-POST request
+   // following code form curl documentation for simple HTTP-POST request
 
     /*
     ****NOTES****
@@ -309,6 +312,11 @@ void startBackend(int port, long seed) {
       curl_slist_free_all(headers);
     }
     curl_global_cleanup();
+
+    // Latency changes//
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = end_time - start_time;
+    std::cout << "Search latency in HNSW: " << duration.count() << " seconds." << std::endl;
 
     // Create JSON response
     json response;
@@ -389,6 +397,9 @@ void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
 }
 
 void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
+  // Latency changes //
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   // prepare the target backend server to forward the request to
   int random_backend_id = getRandomInt(0, num_backend_hosts - 1);
   auto target_backend_host_pair = backend_hosts[random_backend_id];
@@ -405,11 +416,20 @@ void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
   auto response = HttpResponse::newHttpResponse();
   response = std::move(req_result.second);
 
+  // Latency changes //
+  auto end_time = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration = end_time - start_time;
+  std::cout << "Request forwarding latency (to one backend): " << duration.count() << " seconds." << std::endl;
+
   callback(response);
   return;
 }
 
 void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
+
+  // Latency changes //
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   std::vector<std::thread> threads;
   std::atomic<bool> is_first_request_done = false;
   std::mutex response_lock;
@@ -468,6 +488,11 @@ void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
   response_lock.lock();
   copy_response = std::move(first_response.value());
   response_lock.unlock();
+
+  // Latency changes //
+  auto end_time = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration = end_time - start_time;
+  std::cout << "Request forwarding latency (to two backends): " << duration.count() << " seconds." << std::endl;
 
   // Call back the client, sending the response.
   callback(copy_response);
