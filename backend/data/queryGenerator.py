@@ -4,8 +4,14 @@ import os
 word = RandomWord()
 
 queries = int(input("Number of queries: "))
+all_queries = []
+processed = 0
 
 with open("queries.txt", "w") as f:
     f.truncate(0)
-    for i in range(0, queries):
-        f.writelines(word.word(include_parts_of_speech=["nouns"]) + '\n')
+    while(processed < queries):
+        w = word.word(include_parts_of_speech=["nouns"])
+        if w not in all_queries:
+            f.writelines(w + '\n')
+            all_queries.append(w)
+            processed += 1
