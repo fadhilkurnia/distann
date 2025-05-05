@@ -56,10 +56,11 @@ def calcClosestImages(vectors, input_vector, n):
     smallest = [(key, value) for value, key in smallest]
     return smallest
 
-imageEmbeddingsPath = "../data/convertedImageEmbeddings.txt"
-user_input = input("Prompt: ")
-n = int(input("Number of results: "))
-input_vector = vectorize_text(user_input)
+if __name__ == "__main__":
+    imageEmbeddingsPath = "../data/convertedImageEmbeddings.txt"
+    user_input = input("Prompt: ")
+    n = int(input("Number of results: "))
+    input_vector = vectorize_text(user_input)
 
-vectors = loadVectorsFromFile(imageEmbeddingsPath)
-print(calcClosestImages(vectors, input_vector, n))
+    vectors = loadVectorsFromFile(imageEmbeddingsPath)
+    print(calcClosestImages(vectors, input_vector, n))
