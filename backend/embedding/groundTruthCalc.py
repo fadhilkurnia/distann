@@ -13,7 +13,9 @@ with open('../data/queries.txt', 'r') as f:
         query_fix = query.rstrip()
         vector = vectorize_text(query_fix)
         print(f'\nCalculating query {query_fix} ({count}/{len(queries)})')
-        out.update({query_fix: calcClosestImages(vectors, vector, 10)})
+        imgs = calcClosestImages(vectors, vector, 12)
+        new_imgs = [img[0] for img in imgs]
+        out.update({query_fix: new_imgs})
         count += 1
 
 out_json = json.dumps(out)

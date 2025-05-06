@@ -1,6 +1,8 @@
 from app import vectorize_text
 import heapq
 
+imageEmbeddingsPath = "../data/convertedImageEmbeddings.txt"
+
 def loadVectorsFromFile(path):
     with open(imageEmbeddingsPath, 'r') as f:
         lines = f.readlines()
