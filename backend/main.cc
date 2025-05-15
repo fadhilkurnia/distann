@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+#include <signal.h>
+
 #include "hnswlib/hnswlib.h"
 #include "nlohmann/json/json.hpp"
 
@@ -18,27 +21,34 @@ using namespace drogon;
 using json = nlohmann::json;
 using Callback = std::function<void(const HttpResponsePtr &)>;
 
-// prepare the backend hosts, and a random generator to chose the backend.
-const std::vector<std::pair<std::string, int>> backend_hosts = {
-    {"127.0.0.1", 10000}, {"127.0.0.1", 11000}, {"127.0.0.1", 12000},
-    {"127.0.0.1", 13000}, {"127.0.0.1", 14000}, {"127.0.0.1", 15000},
-};
-const int num_backend_hosts = backend_hosts.size();
+const std::string default_backend_host = "127.0.0.1";
+const int embedding_server_port_offset = 300;
 
 // ========================================================================== //
 //                          Begin Function Declarations                       //
 // ========================================================================== //
-void startBackend(const int port, long seed);
-void startProxy(const int port, const std::string &forward_mode);
+void startBackendAndEmbeddingServer(const int backend_port, 
+                                    const int embedding_port,
+                                    const long random_seed);
+void startBackendServer(const int backend_port, 
+                        const int embedding_port,
+                        const long random_seed);
+void startEmbeddingServer(const int embedding_port);
+void startProxy(const int port, const std::vector<int> backend_ports,
+                const std::string &forward_mode);
 void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
-                    Callback &&callback);
-void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback);
-void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback);
-void forwardRequestToAll(const HttpRequestPtr &req, Callback &&callback);
+                    const std::vector<int> backend_ports, Callback &&callback);
+void forwardRequestToOne(const HttpRequestPtr &req, std::vector<int> backend_ports, 
+                         Callback &&callback);
+void forwardRequestToTwo(const HttpRequestPtr &req, std::vector<int> backend_ports,
+                         Callback &&callback);
+void forwardRequestToAll(const HttpRequestPtr &req, std::vector<int> backend_ports, 
+                         Callback &&callback);
 void forwardRequestToN(const HttpRequestPtr &req, Callback &&callback,
                        const int n);
 void forwardRequestWithRoundRobin(const HttpRequestPtr &req,
                                   Callback &&callback);
+void backendSignalHandler(int signum);
 
 size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *s);
 
@@ -52,15 +62,19 @@ int getRandomInt(const int &min, const int &max) {
 //                           End Function Declarations                        //
 // ========================================================================== //
 
-// to start backend do: ./backend (port) (mode) (optional:forwarding_Mode)
-// (optional: seed) (optional:num_of_requests)
 int main(int argc, char *argv[]) {
   const std::string binary_name = argv[0];
 
   if (argc < 4) {
     std::cerr << "Usage: " << std::endl
               << "    " << binary_name
-              << " <port> <mode> <forward_mode> <seed>\n";
+              << " <port> <mode> <forward_mode> <seed> <backend_ports>"
+              << std::endl
+              << "Examples: "
+              << std::endl 
+              << "  - " << binary_name << " 1001 backend all 100"
+              << "  - " << binary_name << " 8080 proxy all 0 1001,1002,1003"
+              << std::endl;
     return 1;
   }
 
@@ -101,19 +115,49 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::cout << "Running distann server with the following config:\n"
-            << " - port         : " << port << std::endl
-            << " - server mode  : " << server_mode << std::endl
-            << " - forward mode : " << forward_mode << std::endl
-            << " - seed         : " << seed << std::endl
-            << std::endl;
+  // validate the backend ports for proxy mode
+  std::vector<int> backend_ports;
+  if (server_mode == "proxy") {
+    if (argc < 6) {
+      std::cerr << "Proxy needs comma-separated list of backend ports!" 
+                << std::endl
+                << "Examples: "
+                << std::endl 
+                << "  - " << binary_name << " 8080 proxy all 0 1001,1002,1003"
+                << std::endl;
+      return 1;
+    }
+    // parse the backend_ports
+    std::string backend_port_list = argv[5];
+    std::stringstream ss(backend_port_list);
+    for (int i; ss >> i;) {
+      backend_ports.push_back(i);
+      if (ss.peek() == ',')
+        ss.ignore();
+    }
+    assert(backend_ports.size() > 0);
+  }
 
   if (server_mode == "backend") {
-    startBackend(port, seed);
+    int embedding_port = port + embedding_server_port_offset;
+    std::cout << "Running distann server with the following config:\n"
+            << " - main port    : " << port << std::endl
+            << " - embed port   : " << embedding_port << std::endl
+            << " - server mode  : " << server_mode << std::endl
+            << " - forward mode : " << forward_mode << " (default)" << std::endl
+            << " - random seed  : " << seed << std::endl
+            << std::endl;
+    startBackendAndEmbeddingServer(port, embedding_port, seed);
   } else if (server_mode == "proxy") {
-    startProxy(port, forward_mode);
+    std::cout << "Running distann proxy with the following config:\n"
+            << " - proxy port   : " << port << std::endl
+            << " - server mode  : " << server_mode << std::endl
+            << " - forward mode : " << forward_mode << std::endl
+            << " - backend ports: " << argv[5] << std::endl
+            << std::endl;
+    startProxy(port, backend_ports, forward_mode);
   } else {
-    std::cerr << "Invalid mode. Use 'backend' or 'proxy'." << std::endl;
+    std::cerr << "Invalid mode. Please use 'backend' or 'proxy'." << std::endl;
     return 1;
   }
 
@@ -128,7 +172,36 @@ size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   return totalSize;
 }
 
-void startBackend(int port, long seed) {
+void startBackendAndEmbeddingServer(const int backend_port,
+                                    const int embedding_port,
+                                    const long random_seed) {
+  // Register the signal handler for SIGINT
+  signal(SIGINT, backendSignalHandler);
+  
+  pid_t pid = fork();
+  if (pid == 0) {
+    // start the embedding server in child process
+    startEmbeddingServer(embedding_port);
+  } else if (pid > 0) {
+    // start the main server in parent process
+    startBackendServer(backend_port, embedding_port, random_seed);
+  } else {
+    std::cerr << "Error forking process." << std::endl;
+    return;
+  }
+  return;
+}
+
+void backendSignalHandler(int signum) {
+  std::cout << "Need to handle signal: " << signum << std::endl;
+  // TODO: handle ctr-c by killing the child process that runs embedding server
+}
+
+// starts as backend mode, while also starting the embedding server in tha
+// background.
+void startBackendServer(const int backend_port, const int embedding_port, 
+                        const long random_seed) {
+  
   // Open file with our embedded image vectors
   const char *embeddingsFile = "../data/imageEmbeddings.txt";
   std::ifstream in(embeddingsFile, std::ios::binary);
@@ -154,7 +227,7 @@ void startBackend(int port, long seed) {
   hnswlib::L2Space space(dim);
   hnswlib::HierarchicalNSW<float> *alg_hnsw =
       new hnswlib::HierarchicalNSW<float>(&space, max_elements, M,
-                                          ef_construction, seed);
+                                          ef_construction, random_seed);
 
   // Create vector to hold data we read from input file
   std::vector<float> currEmbedd(dim);
@@ -212,9 +285,8 @@ void startBackend(int port, long seed) {
                           callback(resp);
                         });
 
-  app().registerHandler("/api/search", [&alg_hnsw, port](
-                                           const HttpRequestPtr &req,
-                                           Callback &&callback) {
+  app().registerHandler("/api/search", [&alg_hnsw, backend_port, embedding_port]
+      (const HttpRequestPtr &req, Callback &&callback) {
     auto resp = HttpResponse::newHttpResponse();
     auto prompt = req->getOptionalParameter<std::string>("prompt");
 
@@ -248,6 +320,9 @@ void startBackend(int port, long seed) {
     */
 
     // Start of user embedding code
+    std::ostringstream embedding_url_stream;
+    embedding_url_stream << "http://127.0.0.1:" << embedding_port << "/embed";
+    std::string embedding_url = embedding_url_stream.str();
 
     CURL *curl;
     CURLcode res;
@@ -260,7 +335,8 @@ void startBackend(int port, long seed) {
     curl = curl_easy_init();
 
     if (curl) {
-      curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:5000/embed");
+
+      curl_easy_setopt(curl, CURLOPT_URL, embedding_url.c_str());
 
       // Prepare the user query to be sent to API
       json payload = {{"query", prompt.value()}};
@@ -329,7 +405,7 @@ void startBackend(int port, long seed) {
       while (label.length() < 4) {
         label.insert(0, 1, '0');
       }
-      std::string port_str = std::to_string(port);
+      std::string port_str = std::to_string(backend_port);
       img["url"] = "http://localhost:" + port_str + "/images/" + label + ".jpg";
       img["alt"] = "Image: " + label + ".jpg";
       response["results"].push_back(img);
@@ -344,22 +420,35 @@ void startBackend(int port, long seed) {
 
   // run the backend server in the specified host/interface and port.
   std::string host = "0.0.0.0";
-  LOG_INFO << "Running distann backend server on " << host << ":" << port;
-  app().addListener(host, port).run();
+  LOG_INFO << "Running distann backend server on " 
+           << host << ":" << backend_port;
+  app().addListener(host, backend_port).run();
 }
 
-void startProxy(const int port, const std::string &forward_mode) {
+void startEmbeddingServer(const int embedding_port) {
+  // prepare the command to start the embedding server
+  std::ostringstream command_stream;
+  command_stream << "python3 ../embedding/app.py --port=" << embedding_port;
+  std::string command = command_stream.str();
+  
+  // run the command
+  int status = std::system(command.c_str());
+  assert(status == 0);
+}
+
+void startProxy(const int port, const std::vector<int> backend_ports, 
+                const std::string &forward_mode) {
   const std::string default_forward_mode = "random_one";
   app().registerHandler(
       "/api/search",
-      [&default_forward_mode](const HttpRequestPtr &req, Callback &&callback) {
+      [&default_forward_mode, &backend_ports] (const HttpRequestPtr &req, Callback &&callback) {
         LOG_INFO << "Receiving request ...";
         auto forward_mode = req->getOptionalParameter<std::string>("forward");
         if (!forward_mode.has_value()) {
           forward_mode.emplace(default_forward_mode);
         }
 
-        forwardRequest(req, forward_mode.value(), std::move(callback));
+        forwardRequest(req, forward_mode.value(), backend_ports, std::move(callback));
         return;
       });
 
@@ -369,22 +458,24 @@ void startProxy(const int port, const std::string &forward_mode) {
   app().addListener(host, port).run();
 }
 
-void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
+void forwardRequest(const HttpRequestPtr &req, 
+                    const std::string &forward_mode,
+                    const std::vector<int> backend_ports,
                     Callback &&callback) {
   // TODO: use persistent client for each backend, for better performance.
 
   LOG_INFO << "Forwarding request with mode=" << forward_mode;
 
   if (forward_mode == "random_one") {
-    forwardRequestToOne(req, std::move(callback));
+    forwardRequestToOne(req, backend_ports, std::move(callback));
     return;
 
   } else if (forward_mode == "random_two") {
-    forwardRequestToTwo(req, std::move(callback));
+    forwardRequestToTwo(req, backend_ports, std::move(callback));
     return;
 
   } else if (forward_mode == "all") {
-    forwardRequestToAll(req, std::move(callback));
+    forwardRequestToAll(req, backend_ports, std::move(callback));
     return;
 
   } else {
@@ -396,16 +487,18 @@ void forwardRequest(const HttpRequestPtr &req, const std::string &forward_mode,
   }
 }
 
-void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
+void forwardRequestToOne(const HttpRequestPtr &req, 
+                         const std::vector<int> backend_ports,
+                         Callback &&callback) {
   // Start time //
   auto start_time = std::chrono::high_resolution_clock::now();
   LOG_INFO << "Forwarding request to one backend...";
 
   // prepare the target backend server to forward the request to
+  int num_backend_hosts = backend_ports.size();
   int random_backend_id = getRandomInt(0, num_backend_hosts - 1);
-  auto target_backend_host_pair = backend_hosts[random_backend_id];
-  std::string target_backend_ip = target_backend_host_pair.first;
-  int target_backend_port = target_backend_host_pair.second;
+  std::string target_backend_ip = default_backend_host;
+  int target_backend_port = backend_ports[random_backend_id];
 
   // forward the request to the target backend, synchronously.
   // TODO: use persistent client for each backend, for better performance.
@@ -426,7 +519,9 @@ void forwardRequestToOne(const HttpRequestPtr &req, Callback &&callback) {
   return;
 }
 
-void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
+void forwardRequestToTwo(const HttpRequestPtr &req, 
+                         const std::vector<int> backend_ports,
+                         Callback &&callback) {
 
   // start time //
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -461,17 +556,17 @@ void forwardRequestToTwo(const HttpRequestPtr &req, Callback &&callback) {
       };
 
   std::vector<HttpClientPtr> http_clients;
+  int num_backend_hosts = backend_ports.size();
   std::unordered_set<int> used_backend_ids;
   for (int i = 0; i < 3; ++i) {
     int random_backend_id = getRandomInt(0, num_backend_hosts - 1);
-    while (used_backend_ids.contains(random_backend_id)) {
+    while (used_backend_ids.count(random_backend_id) > 0) {
       random_backend_id = getRandomInt(0, num_backend_hosts - 1);
     }
     used_backend_ids.insert(random_backend_id);
 
-    auto target_backend_host_pair = backend_hosts[random_backend_id];
-    std::string target_backend_ip = target_backend_host_pair.first;
-    int target_backend_port = target_backend_host_pair.second;
+    std::string target_backend_ip = default_backend_host;
+    int target_backend_port = backend_ports[random_backend_id];
     http_clients.push_back(
         HttpClient::newHttpClient(target_backend_ip, target_backend_port));
   }
@@ -516,11 +611,75 @@ void forwardRequestToN(const HttpRequestPtr &req, Callback &&callback,
   return;
 }
 
-void forwardRequestToAll(const HttpRequestPtr &req, Callback &&callback) {
-  auto response = HttpResponse::newHttpResponse();
-  response->setBody("Forward to all is unimplemented :(");
-  response->setStatusCode(k501NotImplemented);
-  callback(response);
+void forwardRequestToAll(const HttpRequestPtr &req, 
+                         const std::vector<int> backend_ports,
+                         Callback &&callback) {
+  LOG_INFO << "Forwarding request to all backends...";
+
+  std::vector<std::thread> threads;
+  std::atomic<bool> is_first_resp_recv = false;
+  std::mutex response_lock;
+  std::optional<HttpResponsePtr> first_response;
+
+  // a lambda function that actually send request to backend, and record the
+  // first response among other threads.
+  auto sendRequestSetFastestResponse =
+      [&req, &is_first_resp_recv, &response_lock,
+       &first_response](HttpClientPtr &client) {
+        LOG_INFO << "Sending request to " << client->getPort();
+        auto req_result = client->sendRequest(req);
+        if (req_result.first != ReqResult::Ok) {
+          return;
+        }
+
+        response_lock.lock();
+        if (!first_response.has_value()) {
+          first_response.emplace(req_result.second);
+          int target_port = client->getPort();
+          std::cout << "Fastest response from " << target_port << std::endl;
+        }
+        response_lock.unlock();
+
+        // Notify that we have a response received already.
+        // It is fine to have multiple threads set the value to `true`.
+        is_first_resp_recv = true;
+        is_first_resp_recv.notify_all();
+      };
+
+  // prepare http clients for all the backends
+  std::vector<HttpClientPtr> http_clients;
+  const int num_backend_hosts = backend_ports.size();
+  for (int i = 0; i < num_backend_hosts; ++i) {
+    std::string target_backend_ip = default_backend_host;
+    int target_backend_port = backend_ports[i];
+    http_clients.push_back(HttpClient::newHttpClient(target_backend_ip, 
+                                                     target_backend_port));
+  }
+
+  // use threads to send requests
+  for (auto &client : http_clients) {
+    threads.push_back(
+        std::thread(sendRequestSetFastestResponse, std::ref(client)));
+  }
+
+  // Wait for the fastest response. That is until the value is not `false`.
+  is_first_resp_recv.wait(false);
+
+  // Copy the response so we can forward it back to the client.
+  HttpResponsePtr copy_response;
+  response_lock.lock();
+  LOG_INFO << "moving the response " << first_response.has_value() << "\n";
+  copy_response = std::move(first_response.value());
+  response_lock.unlock();
+
+  // Call back the client, sending the response.
+  callback(copy_response);
+
+  // Cleaning up all the threads, ensuring all of them terminate.
+  for (std::thread &t : threads) {
+    t.join();
+  }
+
   return;
 }
 
